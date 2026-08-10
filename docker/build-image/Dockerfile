@@ -11,7 +11,7 @@ FROM cachyos/cachyos-v3:latest
 # 1. Sync + install all tools the build job previously installed ad-hoc.
 RUN pacman -Syu --noconfirm --needed \
         git subversion mercurial sudo rsync github-cli fakeroot \
-        binutils pacman-contrib paru curl awk tar jq \
+        binutils pacman-contrib ccache paru curl awk tar jq \
     && pacman -Scc --noconfirm
 
 # 2. Create the unprivileged builder user used by makepkg/paru.

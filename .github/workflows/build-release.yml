@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: release-repo
@@ -29,6 +30,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      kernel: ${{ steps.set-matrix.outputs.kernel }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -40,6 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           pkgs=()
+          kernel=""
           for dir in */ ; do
             dir="${dir%/}"
             case "$dir" in
@@ -50,9 +53,20 @@ jobs:
             fi
           done
 
-          MATRIX_JSON=$(printf '%s\n' "${pkgs[@]}" | jq -R . | jq -s -c .)
+          # Kernel is built in its own job (heavy compiler, export it separately).
+          filtered=()
+          for p in "${pkgs[@]}"; do
+            if [[ "$p" == "linux-arisa" ]]; then
+              kernel="$p"
+            else
+              filtered+=("$p")
+            fi
+          done
+
+          MATRIX_JSON=$(printf '%s\n' "${filtered[@]}" | jq -R . | jq -s -c .)
           echo "Found packages: $MATRIX_JSON"
           echo "matrix=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
+          echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -70,162 +84,25 @@ jobs:
           set -euo pipefail
           echo "Disk before cleanup:"
           df -h / | tail -1
-          pacman -Scc --noconfirm
           rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
           echo "Disk after cleanup:"
           df -h / | tail -1
 
-      - name: Configure makepkg for x86-64-v3 optimization
-        run: |
-          set -euo pipefail
-          echo "Downloading CachyOS v3 makepkg.conf..."
-          curl -sLo /etc/makepkg.conf https://raw.githubusercontent.com/CachyOS/docker-makepkg/refs/heads/master/docker-makepkg-v3/makepkg.conf
-          echo "Downloading CachyOS v3 rust.conf..."
-          mkdir -p /etc/makepkg.conf.d
-          curl -sLo /etc/makepkg.conf.d/rust.conf https://raw.githubusercontent.com/CachyOS/docker-makepkg/refs/heads/master/docker-makepkg-v3/rust.conf
-          sed -i 's/^PKGDEST=/#PKGDEST=/g' /etc/makepkg.conf
-          sed -i 's/^LOGDEST=/#LOGDEST=/g' /etc/makepkg.conf
-          sed -i 's/^PACKAGECARCH=/#PACKAGECARCH=/g' /etc/makepkg.conf
-
-      - name: Configure pacman options and custom repository
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-        run: |
-          set -euo pipefail
-          tmp=$(mktemp)
-          awk '
-            BEGIN { inserted=0 }
-            /^\[options\]$/ && !inserted { print; print "DisableSandboxNetwork"; inserted=1; next }
-            { print }
-            END { if (!inserted) exit 1 }
-          ' /etc/pacman.conf > "$tmp"
-          cat "$tmp" > /etc/pacman.conf
-          rm -f "$tmp"
-
-          if gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" --json assets -q '.assets[].name' | grep -qx "${REPO_DB_NAME}.db"; then
-          {
-            echo ""
-            echo "[${REPO_DB_NAME}]"
-            echo SigLevel = Optional TrustAll
-            echo "Server = https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
-          } >> /etc/pacman.conf
-          fi
-          pacman -Sy
-
-      - name: Checkout repository
-        uses: actions/checkout@v7
+      - name: Restore pacman package cache
+        uses: actions/cache/restore@v4
         with:
-          fetch-depth: 1
+          path: /var/cache/pacman/pkg
+          key: pacman-cache-${{ github.run_id }}
+          restore-keys: |
+            pacman-cache-
 
-      - name: Fix workspace ownership for build user
-        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+      - name: Prepare build environment
+        uses: ./.github/actions/prepare-env
 
       - name: Build, Cache and Fallback Logic
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PKG: ${{ matrix.package }}
-        run: |
-          set -uo pipefail
-          mkdir -p output /tmp/repo-files /tmp/repo-db
-
-          echo "Fetching database metadata..."
-          if gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir /tmp/repo-db --pattern "${REPO_DB_NAME}.files.tar.gz" 2>/dev/null; then
-            tar -xzf "/tmp/repo-db/${REPO_DB_NAME}.files.tar.gz" -C /tmp/repo-files 2>/dev/null || true
-          fi
-
-          echo "Checking status for $PKG"
-          if grep -q 'pkgver()' "$PKG/PKGBUILD"; then
-            sudo -u builder bash -lc "cd '$GITHUB_WORKSPACE/$PKG' && makepkg -od --noprepare --skipinteg" >/dev/null 2>&1 || true
-          fi
-
-          EXPECTED_PKGS=$(sudo -u builder bash -lc "cd '$GITHUB_WORKSPACE/$PKG' && makepkg --packagelist 2>/dev/null" || true)
-          EXPECTED_PKGS="${EXPECTED_PKGS//:/.}"
-
-          NEEDS_BUILD=false
-          if [[ -z "$EXPECTED_PKGS" ]]; then
-            NEEDS_BUILD=true
-          else
-            for pkg_path in $EXPECTED_PKGS; do
-              pkg_basename=$(basename "$pkg_path")
-              if ! grep -q -x "$pkg_basename" /tmp/repo-files/*/desc 2>/dev/null; then
-                NEEDS_BUILD=true
-                break
-              fi
-            done
-          fi
-
-          if [[ "$NEEDS_BUILD" == "false" ]]; then
-            echo "Package $PKG is up to date. Fetching specific cache from release."
-            for pkg_path in $EXPECTED_PKGS; do
-              pkg_basename=$(basename "$pkg_path")
-              if ! gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir output --pattern "$pkg_basename" 2>/dev/null; then
-                echo "Failed to fetch $pkg_basename cache. Forcing rebuild."
-                NEEDS_BUILD=true
-                break
-              fi
-            done
-          fi
-
-          if [[ "$NEEDS_BUILD" == "false" ]]; then
-            echo "$PKG" > output/status-skipped-$PKG.txt
-          else
-            echo "Building $PKG with paru"
-            ASSUME_PKGS=$(sudo -u builder bash -lc "cd '$GITHUB_WORKSPACE/$PKG' && source PKGBUILD && echo \${pkgname[@]}")
-            ASSUME_ARGS=""
-            for subpkg in $ASSUME_PKGS; do
-              ASSUME_ARGS="$ASSUME_ARGS --assume-installed $subpkg"
-            done
-            PARU_FLAGS="--noconfirm --skipreview --useask --removemake --nocheck -B$ASSUME_ARGS"
-            if [[ "$PKG" == "pacman" ]]; then
-              echo "Package is pacman: adding --skipinteg to makepkg arguments"
-              PARU_FLAGS="$PARU_FLAGS --mflags --skipinteg"
-            fi
-            sed -i 's/_BUILD_DOCS=.*/_BUILD_DOCS=0/' "$PKG/PKGBUILD"
-            sudo -u builder bash -lc "cd '$GITHUB_WORKSPACE/$PKG' && paru $PARU_FLAGS '$GITHUB_WORKSPACE/$PKG'" || true
-            if ls "$PKG"/*.pkg.tar.zst >/dev/null 2>&1; then
-              mv "$PKG"/*.pkg.tar.zst output/
-              echo "Build OK: $PKG"
-              echo "$PKG" > output/status-built-$PKG.txt
-            else
-              echo "Build failed for $PKG"
-              echo "Triggering fallback mechanism for $PKG..."
-              FALLBACK_SUCCESS=false
-              if [[ -d /tmp/repo-files ]]; then
-                for desc_file in /tmp/repo-files/*/desc; do
-                  [[ -f "$desc_file" ]] || continue
-                  base_pkg=$(awk '/^%BASE%/{getline; print; exit}' "$desc_file")
-                  pkg_name=$(awk '/^%NAME%/{getline; print; exit}' "$desc_file")
-                  check_name="${base_pkg:-$pkg_name}"
-                  if [[ "$check_name" == "$PKG" ]]; then
-                    file_name=$(awk '/^%FILENAME%/{getline; print; exit}' "$desc_file")
-                    if [[ -n "$file_name" ]]; then
-                      echo "Restoring $file_name from previous release"
-                      if gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir output --pattern "$file_name" 2>/dev/null; then
-                        FALLBACK_SUCCESS=true
-                        echo "$PKG" > output/status-failed-$PKG.txt
-                      fi
-                    fi
-                  fi
-                done
-              fi
-              if [[ "$FALLBACK_SUCCESS" == "false" ]]; then
-                echo "Fallback failed for $PKG: no previous files found. Gracefully exiting to ignore package."
-                echo "$PKG" > output/status-failed-$PKG.txt
-                exit 0
-              fi
-            fi
-          fi
-
-          for f in output/*:* ; do
-            if [[ -f "$f" ]]; then
-              new_f="${f//:/.}"
-              echo "Renaming $f to $new_f"
-              mv "$f" "$new_f"
-            fi
-          done
-
-          sudo -u builder rm -rf "$GITHUB_WORKSPACE/$PKG/src" "$GITHUB_WORKSPACE/$PKG/pkg"
+        uses: ./.github/actions/build-one-package
+        with:
+          package: ${{ matrix.package }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -235,8 +112,85 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
+  build-kernel:
+    needs: prepare
+    if: needs.prepare.outputs.kernel != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    container:
+      image: ghcr.io/slimulv1/arisa-build:latest
+    env:
+      CCACHE_DIR: /tmp/ccache
+    steps:
+      - name: Free disk space before build
+        run: |
+          set -euo pipefail
+          echo "Disk before cleanup:"
+          df -h / | tail -1
+          rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+          echo "Disk after cleanup:"
+          df -h / | tail -1
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-kernel-${{ github.run_id }}
+          restore-keys: |
+            ccache-kernel-
+
+      - name: Restore pacman package cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /var/cache/pacman/pkg
+          key: pacman-cache-${{ github.run_id }}
+          restore-keys: |
+            pacman-cache-
+
+      - name: Configure ccache
+        run: |
+          set -euo pipefail
+          mkdir -p "${CCACHE_DIR}"
+          chown -R builder:builder "${CCACHE_DIR}"
+          sudo -u builder env CCACHE_DIR="${CCACHE_DIR}" PATH="/usr/lib/ccache/bin:$PATH" ccache -M 5G
+          ccache --version | head -1
+
+      - name: Prepare build environment
+        uses: ./.github/actions/prepare-env
+
+      - name: Build, Cache and Fallback Logic
+        uses: ./.github/actions/build-one-package
+        with:
+          package: ${{ needs.prepare.outputs.kernel }}
+
+      - name: Prune pacman cache (cap 10GB)
+        run: |
+          set -euo pipefail
+          paccache -rk 5 -c /var/cache/pacman/pkg --nocolor || true
+          du -sh /var/cache/pacman/pkg
+
+      - name: Save ccache
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-kernel-${{ github.run_id }}
+
+      - name: Save pacman package cache
+        uses: actions/cache/save@v4
+        with:
+          path: /var/cache/pacman/pkg
+          key: pacman-cache-${{ github.run_id }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-arisa
+          path: output/*
+          if-no-files-found: ignore
+          retention-days: 1
+
   publish:
-    needs: [prepare, build]
+    needs: [prepare, build, build-kernel]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: arisa-production
@@ -246,6 +200,25 @@ jobs:
     container:
       image: ghcr.io/slimulv1/arisa-build:latest
     steps:
+
+      - name: Prune old CI caches (keep 3 newest per prefix)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          for prefix in pacman-cache- ccache-kernel-; do
+            echo "Pruning caches with prefix: $prefix"
+            # Newest first; skip the 3 most recent, delete the rest.
+            gh cache list --repo "$REPO" --json id,key,createdAt \
+              | jq -r --arg p "$prefix" '.[] | select(.key | startswith($p)) | [.createdAt, .id, .key] | @tsv' \
+              | sort -r \
+              | tail -n +4 \
+              | while IFS=$'\t' read -r _ id key; do
+                  echo "  Deleting cache $key (id=$id)"
+                  gh cache delete "$id" --repo "$REPO" -y || true
+                done
+          done
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
