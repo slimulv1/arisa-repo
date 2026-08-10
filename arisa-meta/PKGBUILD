@@ -2,7 +2,7 @@
 # Meta-package: installs the whole Arisa AUR fleet in one shot.
 pkgname=arisa-meta
 pkgver=1
-pkgrel=1
+pkgrel=2
 pkgdesc='Arisa meta package — toàn bộ đội hình AUR của Arisa (dwm bar, rice, work)'
 arch=('any')
 url='https://github.com/slimulv1/arisa-repo'
