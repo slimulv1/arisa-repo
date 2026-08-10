@@ -257,6 +257,8 @@ jobs:
 
       - name: Generate fresh pacman database & Prepare Release Notes
         id: generate
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd output
@@ -281,6 +283,20 @@ jobs:
           else
             echo "has_new_changes=true" >> "$GITHUB_OUTPUT"
           fi
+
+          # Detect removed packages: if old release assets are no longer in the
+          # current build list, force publish so stale assets + DB entries get cleaned.
+          gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" --json assets \
+            -q '.assets[] | select(.name | endswith(".pkg.tar.zst")) | .name' \
+            > /tmp/release-pkgs.txt 2>/dev/null || true
+          while IFS= read -r oldfile; do
+            [[ -n "$oldfile" ]] || continue
+            if ! grep -q -F -x "$oldfile" <(printf '%s\n' "${pkgs[@]}"); then
+              echo "Stale package found on release: $oldfile (no longer in packages.txt)"
+              echo "has_new_changes=true" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done < /tmp/release-pkgs.txt
 
           echo "Generating clean database from active packages only."
           repo-add "${REPO_DB_NAME}.db.tar.gz" "${pkgs[@]}"
