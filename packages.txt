@@ -21,14 +21,6 @@ python-pywal16
 python-pywalfox
 spoofdpi
 visual-studio-code-bin
-wmclock
-wmcore
-wmcpumon
-wmitime
-wmnet
-wmnetload
-wmshutdown
-wmsystemtray
 
 # --- Self-maintained packages (local:) ---
 local: linux-arisa

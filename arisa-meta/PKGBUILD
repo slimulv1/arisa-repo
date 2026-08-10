@@ -29,14 +29,6 @@ optdepends=(
   'python-pywalfox: firefox pywal'
   'spoofdpi: bypass DPI'
   'visual-studio-code-bin: VS Code'
-  'wmclock: dockapp clock'
-  'wmcore: dockapp CPU'
-  'wmcpumon: dockapp CPU monitor'
-  'wmitime: dockapp time'
-  'wmnet: dockapp network'
-  'wmnetload: dockapp network load'
-  'wmshutdown: dockapp shutdown'
-  'wmsystemtray: dockapp system tray'
 )
 
 package() {
