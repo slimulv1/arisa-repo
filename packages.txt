@@ -1,0 +1,35 @@
+## Arisa repository package list
+# Lines starting with # are comments. local: prefix means self-maintained PKGBUILD.
+
+# --- AUR packages (synced automatically from CachyOS-PKGBUILDS or AUR) ---
+amethyst-mod-manager
+anifetch-cli
+betterlockscreen
+bibata-cursor-theme
+code-marketplace
+cozette-otb
+discord-ptb
+evdi-dkms
+fcitx5-lotus-bin
+hw-probe
+lianli-linux-git
+libdockapp
+light
+python-libloot
+python-pynput
+python-pywal16
+python-pywalfox
+spoofdpi
+visual-studio-code-bin
+wmclock
+wmcore
+wmcpumon
+wmitime
+wmnet
+wmnetload
+wmshutdown
+wmsystemtray
+
+# --- Self-maintained packages (local:) ---
+local: linux-arisa
+local: arisa-meta
