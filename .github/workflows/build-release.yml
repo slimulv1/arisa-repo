@@ -9,6 +9,7 @@ on:
       - '.github/**'
       - 'README.md'
       - 'packages.txt'
+      - 'docker/**'
   workflow_dispatch: {}
 
 permissions:
