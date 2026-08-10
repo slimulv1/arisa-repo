@@ -26,6 +26,7 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
@@ -56,20 +57,14 @@ jobs:
   build:
     needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 200
     container:
-      image: cachyos/cachyos-v3
+      image: ghcr.io/slimulv1/arisa-build:latest
     strategy:
       fail-fast: false
       matrix:
         package: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
-      - name: Install base dependencies
-        run: |
-          set -euo pipefail
-          pacman -Syu --noconfirm --needed git subversion mercurial sudo rsync github-cli fakeroot binutils pacman-contrib paru curl awk tar jq
-          id builder >/dev/null 2>&1 || useradd -m builder
-          grep -q '^builder ALL=(ALL) NOPASSWD: ALL$' /etc/sudoers || echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-
       - name: Free disk space before build
         run: |
           set -euo pipefail
@@ -111,7 +106,7 @@ jobs:
           if gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" --json assets -q '.assets[].name' | grep -qx "${REPO_DB_NAME}.db"; then
           {
             echo ""
-            echo [arisa]
+            echo "[${REPO_DB_NAME}]"
             echo SigLevel = Optional TrustAll
             echo "Server = https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
           } >> /etc/pacman.conf
@@ -233,7 +228,7 @@ jobs:
           sudo -u builder rm -rf "$GITHUB_WORKSPACE/$PKG/src" "$GITHUB_WORKSPACE/$PKG/pkg"
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.package }}
           path: output/*
@@ -243,14 +238,17 @@ jobs:
   publish:
     needs: [prepare, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: arisa-production
+    concurrency:
+      group: publish-release
+      cancel-in-progress: true
     container:
-      image: ghcr.io/archlinux/archlinux:latest
+      image: ghcr.io/slimulv1/arisa-build:latest
     steps:
-      - name: Install dependencies
-        run: pacman -Syu --noconfirm --needed github-cli pacman-contrib jq
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           path: output
           pattern: pkg-*
@@ -330,14 +328,27 @@ jobs:
           set -euo pipefail
           REPO="${{ github.repository }}"
           TAG="${{ env.RELEASE_TAG }}"
+          DB="${{ env.REPO_DB_NAME }}"
+
+          # Retry helper: attempts with exponential backoff (10s, 20s, 40s)
+          retry() {
+            local attempts=$1; shift
+            local delay=10
+            local i
+            for ((i = 1; i <= attempts; i++)); do
+              if "$@"; then
+                return 0
+              fi
+              echo "Attempt $i/$attempts failed, retrying in ${delay}s..."
+              sleep "$delay"
+              delay=$((delay * 2))
+            done
+            echo "Command failed after $attempts attempts: $*" >&2
+            return 1
+          }
 
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            echo "Cleaning up all old assets to remove deleted packages."
-            gh release view "$TAG" --repo "$REPO" --json assets -q '.assets[].name' \
-              | while read -r name; do
-                  [[ -n "$name" ]] || continue
-                  gh release delete-asset "$TAG" "$name" --repo "$REPO" -y || true
-                done
+            echo "Release $TAG exists."
           else
             echo "Creating release $TAG."
             gh release create "$TAG" --repo "$REPO" \
@@ -345,9 +356,58 @@ jobs:
               --notes "Auto-built pacman repository."
           fi
 
-          echo "Uploading current assets."
-          gh release upload "$TAG" output/* --repo "$REPO" --clobber
+          cd output
+          shopt -s nullglob
 
+          # Database snapshot files (uploaded LAST as the atomic switch). Note:
+          # repo-add emits symlinks (arisa.db -> arisa.db.tar.gz) which the gh CLI
+          # tracks correctly when uploading.
+          DB_FILES=("${DB}.db" "${DB}.db.tar.gz" "${DB}.files" "${DB}.files.tar.gz")
+
+          echo "Collecting current package names..."
+          current_pkgs=()
+          for f in *.pkg.tar.zst; do
+            current_pkgs+=("$(basename "$f")")
+          done
+
+          # Only stale assets are removed (old packages / stray files). DB snapshot
+          # files and current packages are preserved, keeping the repo usable.
+          echo "Cleaning stale assets from release..."
+          gh release view "$TAG" --repo "$REPO" --json assets -q '.assets[].name' \
+            | while read -r name; do
+                [[ -n "$name" ]] || continue
+                is_db=false
+                for dbf in "${DB_FILES[@]}"; do
+                  if [[ "$name" == "$dbf" ]]; then is_db=true; break; fi
+                done
+                if [[ "$is_db" == "true" ]]; then continue; fi
+                if [[ "$name" == *.pkg.tar.zst ]] \
+                   && printf '%s\n' "${current_pkgs[@]}" | grep -q -F -x "$name"; then
+                  continue
+                fi
+                echo "Deleting stale asset: $name"
+                gh release delete-asset "$TAG" "$name" --repo "$REPO" -y || true
+              done
+
+          echo "Uploading packages (with retry)..."
+          for f in *.pkg.tar.zst; do
+            echo "  Uploading $(basename "$f")"
+            retry 3 gh release upload "$TAG" "$f" --repo "$REPO" --clobber
+          done
+
+          echo "Verifying generated database..."
+          tar -tf "${DB}.db.tar.gz" >/dev/null 2>&1 \
+            || { echo "ERROR: ${DB}.db.tar.gz is not a valid gzip tar archive"; exit 1; }
+
+          echo "Uploading database and file snapshots (atomic switch)..."
+          for f in "${DB_FILES[@]}"; do
+            if [[ -f "$f" ]]; then
+              echo "  Uploading $(basename "$f")"
+              retry 3 gh release upload "$TAG" "$f" --repo "$REPO" --clobber
+            fi
+          done
+
+          cd "$GITHUB_WORKSPACE"
           RELEASE_NOTES=$(cat <<EOF
           ### 📦 Repository Update Summary (Matrix Build)
 
