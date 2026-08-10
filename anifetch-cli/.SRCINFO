@@ -1,0 +1,22 @@
+pkgbase = anifetch-cli
+	pkgdesc = Animated terminal fetch with video and audio support
+	pkgver = 1.0.6
+	pkgrel = 1
+	url = https://github.com/Notenlish/anifetch
+	arch = any
+	license = MIT
+	makedepends = python-build
+	makedepends = python-installer
+	makedepends = python-wheel
+	depends = python
+	depends = chafa
+	depends = ffmpeg
+	depends = fastfetch
+	depends = python-platformdirs
+	depends = python-wcwidth
+	depends = python-rich
+	depends = python-pynput
+	source = anifetch-cli-1.0.6.tar.gz::https://github.com/Notenlish/anifetch/archive/refs/tags/1.0.6.tar.gz
+	sha256sums = 383263d7fd237dd46bcc4bf59d7587fea14490370c3845f1bca6ac6853e5b4b9
+
+pkgname = anifetch-cli
