@@ -1,0 +1,45 @@
+# Maintainer: magnus (slimulv1) <magnus@arisa.local>
+# Meta-package: installs the whole Arisa AUR fleet in one shot.
+pkgname=arisa-meta
+pkgver=1
+pkgrel=1
+pkgdesc='Arisa meta package — toàn bộ đội hình AUR của Arisa (dwm bar, rice, work)'
+arch=('any')
+url='https://github.com/slimulv1/arisa-repo'
+license=('MIT')
+# NOTE: optdepends (not depends) on purpose — a meta-package must NOT force
+# paru to build all AUR deps during its own build in the CI pipeline.
+optdepends=(
+  'amethyst-mod-manager: game mod manager'
+  'anifetch-cli: anime-style neofetch'
+  'betterlockscreen: lock screen'
+  'bibata-cursor-theme: mouse cursors'
+  'code-marketplace: VS Code marketplace'
+  'cozette-otb: bitmap font'
+  'discord-ptb: Discord PTB'
+  'evdi-dkms: external display kernel module'
+  'fcitx5-lotus-bin: fcitx5 lotus theme'
+  'hw-probe: hardware probe'
+  'lianli-linux-git: Lian Li fan control'
+  'libdockapp: dockapp toolkit'
+  'light: backlight control'
+  'python-libloot: load order tooling'
+  'python-pynput: input automation'
+  'python-pywal16: wallpaper colorschemes'
+  'python-pywalfox: firefox pywal'
+  'spoofdpi: bypass DPI'
+  'visual-studio-code-bin: VS Code'
+  'wmclock: dockapp clock'
+  'wmcore: dockapp CPU'
+  'wmcpumon: dockapp CPU monitor'
+  'wmitime: dockapp time'
+  'wmnet: dockapp network'
+  'wmnetload: dockapp network load'
+  'wmshutdown: dockapp shutdown'
+  'wmsystemtray: dockapp system tray'
+)
+
+package() {
+  install -Dm644 /dev/null "$pkgdir/usr/share/doc/arisa-meta/README"
+  echo "Arisa meta package: cài xong cả đội hình rồi anh! 🖤" > "$pkgdir/usr/share/doc/arisa-meta/README"
+}

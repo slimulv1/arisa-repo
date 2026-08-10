@@ -47,7 +47,7 @@ jobs:
             echo "::warning::Failed to clone CachyOS repository"
           fi
 
-          mapfile -t VALID_PKGS < <(sed 's/#.*//' packages.txt | awk '{print $1}' | grep -v '^$' | sed 's/^local://')
+          mapfile -t VALID_PKGS < <(sed 's/#.*//' packages.txt | sed 's/^local:[[:space:]]*//' | awk '{print $1}' | grep -v '^$')
 
           for dir in */ ; do
             [[ -e "$dir" ]] || continue

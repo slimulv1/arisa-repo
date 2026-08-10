@@ -69,6 +69,16 @@ jobs:
           id builder >/dev/null 2>&1 || useradd -m builder
           grep -q '^builder ALL=(ALL) NOPASSWD: ALL$' /etc/sudoers || echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
+      - name: Free disk space before build
+        run: |
+          set -euo pipefail
+          echo "Disk before cleanup:"
+          df -h / | tail -1
+          pacman -Scc --noconfirm
+          rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+          echo "Disk after cleanup:"
+          df -h / | tail -1
+
       - name: Configure makepkg for x86-64-v3 optimization
         run: |
           set -euo pipefail
