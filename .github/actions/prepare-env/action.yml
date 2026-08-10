@@ -1,7 +1,7 @@
 name: Prepare build environment
 description: Shared environment setup for every build job (makepkg v3 config,
-  pacman options + custom repo, checkout, workspace ownership). Keeps the
-  matrix and kernel jobs DRY.
+  pacman options + custom repo, workspace ownership). Keeps the matrix and
+  kernel jobs DRY. Assumes the repository is already checked out by the job.
 
 runs:
   using: composite
@@ -44,11 +44,6 @@ runs:
         } >> /etc/pacman.conf
         fi
         pacman -Sy
-
-    - name: Checkout repository
-      uses: actions/checkout@v7
-      with:
-        fetch-depth: 1
 
     - name: Fix workspace ownership for build user
       shell: bash

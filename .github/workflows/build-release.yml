@@ -79,6 +79,11 @@ jobs:
       matrix:
         package: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
       - name: Free disk space before build
         run: |
           set -euo pipefail
@@ -122,6 +127,11 @@ jobs:
     env:
       CCACHE_DIR: /tmp/ccache
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
       - name: Free disk space before build
         run: |
           set -euo pipefail
