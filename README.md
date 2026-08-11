@@ -2,6 +2,26 @@
 
 Kho binary của **Arisa** — repo Arch Linux cá nhân, build tự động 100% bằng GitHub Actions + GitHub Releases (zero-cost, không cần VPS). Đặt theo tên của Arisa, trợ lý ảo trên máy của anh. 🖤
 
+<div align="center">
+
+<!-- Hàng 1 — HERO (for-the-badge): identity -->
+[![Arch Linux](https://img.shields.io/badge/Arch_Linux-1793D1?style=for-the-badge&logo=archlinux&logoColor=white)](https://archlinux.org)
+[![pacman install](https://img.shields.io/badge/pacman-arisa-7b2ff7?style=for-the-badge&logo=archlinux&logoColor=white)](https://wiki.archlinux.org/title/Unofficial_user_repositories)
+[![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/features/actions)
+
+<!-- Hàng 2 — CI STATUS (flat-square): 3 workflow -->
+[![Build and Publish](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-release.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-release.yml)
+[![Sync AUR](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/sync-aur.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/sync-aur.yml)
+[![Update Build Image](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/update-image.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/update-image.yml)
+
+<!-- Hàng 3 — REPO STATS (flat): chỉ những gì có ý nghĩa -->
+[![License](https://img.shields.io/github/license/slimulv1/arisa-repo?style=flat)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/slimulv1/arisa-repo?style=flat)](https://github.com/slimulv1/arisa-repo/commits/main)
+[![Commit activity](https://img.shields.io/github/commit-activity/m/slimulv1/arisa-repo?style=flat)](https://github.com/slimulv1/arisa-repo/commits/main)
+[![Last publish](https://img.shields.io/github/release-date/slimulv1/arisa-repo?style=flat)](https://github.com/slimulv1/arisa-repo/releases)
+
+</div>
+
 ## Ý tưởng
 
 Mọi thứ điều khiển bởi `packages.txt` (single source of truth):
