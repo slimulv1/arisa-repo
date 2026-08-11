@@ -20,6 +20,7 @@ python-pywalfox
 spoofdpi
 visual-studio-code-bin
 localsend
+openrgb-git
 
 # --- Self-maintained packages (local:) ---
 local: linux-arisa
