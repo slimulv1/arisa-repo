@@ -34,3 +34,4 @@ local: anifetch-cli
 local: ttf-vietnamese-tcvn3
 local: ttf-vietnamese-vni
 local: catppuccin-fcitx5-git
+local: qpwgraph

@@ -1,0 +1,51 @@
+# Maintainer: Arisa <arisa@local>
+# Upstream: rncbc (Rui Nuno Capela) — https://gitlab.freedesktop.org/rncbc/qpwgraph
+# Note: source uses the GitHub mirror (rncbc/qpwgraph) because
+# gitlab.freedesktop.org is protected by Anubis (JS proof-of-work) which
+# blocks curl/wget/CI archive downloads. GitHub tag content is identical.
+_pkgname=qpwgraph
+pkgname=$_pkgname
+pkgver=1.0.3
+pkgrel=1
+pkgdesc='PipeWire Graph Qt GUI Interface'
+arch=('x86_64')
+url='https://gitlab.freedesktop.org/rncbc/qpwgraph'
+license=('GPL-2.0-or-later')
+groups=('pro-audio')
+depends=(
+    'alsa-lib'
+    'hicolor-icon-theme'
+    'libpipewire'
+    'qt6-base'
+    'qt6-svg'
+)
+makedepends=(
+    'alsa-lib'
+    'cmake'
+    'ninja'
+    'pipewire'
+)
+source=("${_pkgname}-${pkgver}.tar.gz::https://github.com/rncbc/${_pkgname}/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('52561dc16f297ea235ed1c3df0e4fa1e4f9c33f825b994c303218f45fb105ce9')
+
+build() {
+    cmake -B build -G Ninja \
+        -DCMAKE_BUILD_TYPE=None \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+        -DCONFIG_ALSA_MIDI=ON \
+        -DCONFIG_SYSTEM_TRAY=ON \
+        -DCONFIG_XUNIQUE=ON \
+        -DCONFIG_QT6=ON \
+        -W no-dev \
+        -S "${_pkgname}-${pkgver}"
+    cmake --build build --parallel
+}
+
+check() {
+    true
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+}

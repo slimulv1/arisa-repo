@@ -1,0 +1,21 @@
+pkgbase = qpwgraph
+	pkgdesc = PipeWire Graph Qt GUI Interface
+	pkgver = 1.0.3
+	pkgrel = 1
+	url = https://gitlab.freedesktop.org/rncbc/qpwgraph
+	arch = x86_64
+	groups = pro-audio
+	license = GPL-2.0-or-later
+	makedepends = alsa-lib
+	makedepends = cmake
+	makedepends = ninja
+	makedepends = pipewire
+	depends = alsa-lib
+	depends = hicolor-icon-theme
+	depends = libpipewire
+	depends = qt6-base
+	depends = qt6-svg
+	source = qpwgraph-1.0.3.tar.gz::https://github.com/rncbc/qpwgraph/archive/refs/tags/v1.0.3.tar.gz
+	sha256sums = 52561dc16f297ea235ed1c3df0e4fa1e4f9c33f825b994c303218f45fb105ce9
+
+pkgname = qpwgraph
