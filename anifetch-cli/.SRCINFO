@@ -1,7 +1,7 @@
 pkgbase = anifetch-cli
 	pkgdesc = Animated terminal fetch with video and audio support
 	pkgver = 1.0.6
-	pkgrel = 1
+	pkgrel = 2
 	url = https://github.com/Notenlish/anifetch
 	arch = any
 	license = MIT
