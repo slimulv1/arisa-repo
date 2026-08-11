@@ -36,24 +36,34 @@ jobs:
         id: sync
         run: |
           set -uo pipefail
-          mkdir -p /tmp/aur-clone
           SYNCED=()
           FAILED=()
           REMOVED=()
 
-          echo "Cloning CachyOS-PKGBUILDS repository..."
+          # --- CachyOS-PKGBUILDS: sparse + blob-filtered clone (metadata only) ---
+          echo "Cloning CachyOS-PKGBUILDS repository (sparse, blob:none)..."
           rm -rf /tmp/cachyos-pkgbuilds
-          if ! git clone --depth=1 "https://github.com/CachyOS/CachyOS-PKGBUILDS.git" /tmp/cachyos-pkgbuilds >/tmp/cachyos-clone.log 2>&1; then
+          CACHYOS_OK=false
+          if git clone --depth=1 --filter=blob:none --sparse \
+               "https://github.com/CachyOS/CachyOS-PKGBUILDS.git" \
+               /tmp/cachyos-pkgbuilds >/tmp/cachyos-clone.log 2>&1; then
+            CACHYOS_OK=true
+            git -C /tmp/cachyos-pkgbuilds ls-tree -r --name-only HEAD \
+              > /tmp/cachyos-tree.txt
+          else
             echo "::warning::Failed to clone CachyOS repository"
+            cat /tmp/cachyos-clone.log
+            : > /tmp/cachyos-tree.txt
           fi
 
           mapfile -t VALID_PKGS < <(sed 's/#.*//' packages.txt | sed 's/^local:[[:space:]]*//' | awk '{print $1}' | grep -v '^$')
 
+          # --- Prune directories no longer listed in packages.txt ---
           for dir in */ ; do
             [[ -e "$dir" ]] || continue
             dir="${dir%/}"
             case "$dir" in
-              .github) continue ;;
+              .github|docker) continue ;;
             esac
             if ! printf '%s\n' "${VALID_PKGS[@]}" | grep -q -x "$dir"; then
               echo "Removing obsolete package directory: $dir"
@@ -62,6 +72,29 @@ jobs:
             fi
           done
 
+          # --- Pass 1: find which packages exist in CachyOS (tree metadata only) ---
+          declare -A CACHYOS_PATHS
+          CACHYOS_HITS=()
+          while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
+            pkg_entry="$(echo "$raw_line" | sed 's/#.*//' | xargs)"
+            [[ -z "$pkg_entry" ]] && continue
+            [[ "$pkg_entry" == local:* ]] && continue
+            pkg="$pkg_entry"
+            pkgbuild_path=$(grep -E "(^|/)$pkg/PKGBUILD$" /tmp/cachyos-tree.txt | head -1 || true)
+            if [[ -n "$pkgbuild_path" ]]; then
+              CACHYOS_PATHS["$pkg"]="/tmp/cachyos-pkgbuilds/${pkgbuild_path%/PKGBUILD}"
+              CACHYOS_HITS+=("$pkg")
+            fi
+          done < packages.txt
+
+          # --- Materialize only the needed CachyOS directories ---
+          if [[ "$CACHYOS_OK" == "true" && ${#CACHYOS_HITS[@]} -gt 0 ]]; then
+            echo "Sparse-checking out ${#CACHYOS_HITS[@]} package(s) from CachyOS..."
+            git -C /tmp/cachyos-pkgbuilds sparse-checkout set "${CACHYOS_HITS[@]}" >/dev/null 2>&1 || true
+            git -C /tmp/cachyos-pkgbuilds checkout HEAD -- "${CACHYOS_HITS[@]}" 2>/dev/null || true
+          fi
+
+          # --- Pass 2: sync each package (CachyOS first, then AUR snapshot) ---
           while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
             pkg_entry="$(echo "$raw_line" | sed 's/#.*//' | xargs)"
             [[ -z "$pkg_entry" ]] && continue
@@ -73,35 +106,34 @@ jobs:
             fi
 
             pkg="$pkg_entry"
-            
-            echo "Checking CachyOS-PKGBUILDS for $pkg..."
-            cachyos_dir=$(find /tmp/cachyos-pkgbuilds -mindepth 1 -maxdepth 4 -type d -name "$pkg" -not -path "*/\.git/*" -print -quit)
+            src_dir="${CACHYOS_PATHS[$pkg]:-}"
 
-            if [[ -n "$cachyos_dir" ]]; then
-              echo "Found $pkg in CachyOS-PKGBUILDS"
-              echo "Syncing files for $pkg from CachyOS"
+            if [[ -n "$src_dir" && -f "$src_dir/PKGBUILD" ]]; then
+              echo "Found $pkg in CachyOS-PKGBUILDS (sparse-checkout)"
               mkdir -p "$pkg"
               find "$pkg" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-              rsync -a --exclude='.git' "$cachyos_dir/" "$pkg/"
+              rsync -a --exclude='.git' "$src_dir/" "$pkg/"
               SYNCED+=("$pkg")
               continue
             fi
 
-            echo "Not found in CachyOS. Cloning $pkg from AUR..."
-            rm -rf "/tmp/aur-clone/$pkg"
-
-            if ! git clone --depth=1 "https://aur.archlinux.org/${pkg}.git" "/tmp/aur-clone/$pkg" >/tmp/clone.log 2>&1; then
-              echo "::warning::Clone failed for $pkg"
-              cat /tmp/clone.log
+            echo "Not found in CachyOS. Downloading $pkg snapshot from AUR..."
+            snap="/tmp/aur-snap-$pkg.tar.gz"
+            if ! curl -fsSL "https://aur.archlinux.org/cgit/aur.git/snapshot/${pkg}.tar.gz" -o "$snap"; then
+              echo "::warning::Snapshot download failed for $pkg"
               FAILED+=("$pkg")
               continue
             fi
-
-            echo "Syncing files for $pkg from AUR"
-            mkdir -p "$pkg"
+            mkdir -p "/tmp/aur-snap-extract/$pkg" "$pkg"
+            if ! tar -xzf "$snap" -C "/tmp/aur-snap-extract/$pkg" --strip-components=1 2>/dev/null; then
+              echo "::warning::Snapshot extract failed for $pkg"
+              FAILED+=("$pkg")
+              rm -f "$snap"
+              continue
+            fi
+            rm -f "$snap"
             find "$pkg" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-            rsync -a --exclude='.git' "/tmp/aur-clone/$pkg/" "$pkg/"
-
+            rsync -a "/tmp/aur-snap-extract/$pkg/" "$pkg/"
             SYNCED+=("$pkg")
           done < packages.txt
 

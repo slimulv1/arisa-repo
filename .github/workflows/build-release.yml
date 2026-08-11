@@ -37,33 +37,29 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Scan directories and generate matrix
+      - name: Generate matrix from packages.txt
         id: set-matrix
         run: |
           set -euo pipefail
+          # packages.txt is the single source of truth (same parsing as sync-aur.yml).
+          mapfile -t VALID_PKGS < <(sed 's/#.*//' packages.txt | sed 's/^local:[[:space:]]*//' | awk '{print $1}' | grep -v '^$')
+
           pkgs=()
           kernel=""
-          for dir in */ ; do
-            dir="${dir%/}"
-            case "$dir" in
-              .github|cache|output) continue ;;
-            esac
-            if [[ -f "$dir/PKGBUILD" ]]; then
-              pkgs+=("$dir")
+          for p in "${VALID_PKGS[@]}"; do
+            if [[ ! -f "$p/PKGBUILD" ]]; then
+              echo "::warning::PKGBUILD missing for $p — skipping"
+              continue
             fi
-          done
-
-          # Kernel is built in its own job (heavy compiler, export it separately).
-          filtered=()
-          for p in "${pkgs[@]}"; do
+            # Kernel is built in its own job (heavy compiler, export it separately).
             if [[ "$p" == "linux-arisa" ]]; then
               kernel="$p"
             else
-              filtered+=("$p")
+              pkgs+=("$p")
             fi
           done
 
-          MATRIX_JSON=$(printf '%s\n' "${filtered[@]}" | jq -R . | jq -s -c .)
+          MATRIX_JSON=$(printf '%s\n' "${pkgs[@]}" | jq -R . | jq -s -c .)
           echo "Found packages: $MATRIX_JSON"
           echo "matrix=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
           echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
@@ -92,6 +88,13 @@ jobs:
           rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
           echo "Disk after cleanup:"
           df -h / | tail -1
+          # Fail fast on critically low disk instead of failing mid-build.
+          avail_kb=$(df -k --output=avail / | tail -1 | tr -d ' ')
+          if (( avail_kb < 5242880 )); then
+            echo "::error::Less than 5GB available on /. Aborting build."
+            exit 1
+          fi
+          echo "OK: $(numfmt --to=iec "$((avail_kb * 1024))") available."
 
       - name: Restore pacman package cache
         uses: actions/cache/restore@v4
@@ -140,6 +143,13 @@ jobs:
           rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
           echo "Disk after cleanup:"
           df -h / | tail -1
+          # Fail fast on critically low disk instead of failing mid-build.
+          avail_kb=$(df -k --output=avail / | tail -1 | tr -d ' ')
+          if (( avail_kb < 5242880 )); then
+            echo "::error::Less than 5GB available on /. Aborting build."
+            exit 1
+          fi
+          echo "OK: $(numfmt --to=iec "$((avail_kb * 1024))") available."
 
       - name: Restore ccache
         uses: actions/cache/restore@v4
