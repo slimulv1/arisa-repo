@@ -20,9 +20,6 @@ python-pywalfox
 spoofdpi
 visual-studio-code-bin
 localsend
-ttf-vietnamese-tcvn3
-ttf-vietnamese-vni
-catppuccin-fcitx5-git
 
 # --- Self-maintained packages (local:) ---
 local: linux-arisa
@@ -32,3 +29,6 @@ local: ventoy
 local: zalo-for-linux-bin
 local: lianli-linux-git
 local: anifetch-cli
+local: ttf-vietnamese-tcvn3
+local: ttf-vietnamese-vni
+local: catppuccin-fcitx5-git

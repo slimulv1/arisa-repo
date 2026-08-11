@@ -80,6 +80,14 @@ sudo pacman -S arisa-meta    # cài cả đội hình AUR của Arisa
 | :-- | :-- |
 | `linux-arisa` | Kernel Liquorix đổi tên — **giữ nguyên 100% patch/config/cách build** của upstream `linux-lqx` (PDS scheduler, ZEN patches), chỉ đổi tên package + localversion thành `-arisa`. Chia gói: `linux-arisa`, `linux-arisa-headers`, `linux-arisa-docs` |
 | `arisa-meta` | Meta-package: cài toàn bộ đội hình AUR của Arisa trong một lệnh |
+| `ttf-ms-win11-base` | Font Windows 11 base (Segoe UI, Consolas, Cascadia... ) — giữ local để cài trực tiếp |
+| `ventoy` | Ventoy — tạo USB multi-boot. Packaging phức tạp (build nhiều thành phần từ source cũ: grub, edk2, ipxe...), vendor patch cục bộ nên tự maintain |
+| `zalo-for-linux-bin` | Zalo client cho Linux (Unofficial, AppImage + ZaDark) — AUR source hardcode commit cũ gây 404, fix `_commithash` cục bộ nên giữ local |
+| `lianli-linux-git` | Điều khiển fan/LED Lian Li (Host Controller) — cần udev rule `60-lianli.rules`, fix gtk3/webkit/npm/setuptools, pkgrel cục bộ |
+| `anifetch-cli` | CLI fetch tool lấy cảm hứng từ anime — cần `python-setuptools` trong makedepends |
+| `ttf-vietnamese-tcvn3` | Font tiếng Việt chuẩn TCVN 6909 (bộ `Vn*.ttf`) — nội dung đóng băng, chuyển local để không bị sync đè |
+| `ttf-vietnamese-vni` | Font tiếng Việt chuẩn VNI (bộ `VNI-*.ttf`) — nội dung đóng băng, chuyển local để không bị sync đè |
+| `catppuccin-fcitx5-git` | Theme Catppuccin cho fcitx5 (`*rounded` themes) — nội dung đóng băng, chuyển local để không bị sync đè |
 
 ## Gói AUR được mirror (theo máy của anh)
 
