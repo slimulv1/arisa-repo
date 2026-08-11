@@ -95,7 +95,7 @@ options=(!buildflags)
 source=(
   "$pkgname-$pkgver.tar.gz::https://github.com/ventoy/Ventoy/archive/refs/tags/v$pkgver.tar.gz"
   https://ftp.gnu.org/gnu/grub/grub-"$_grub_ver".tar.xz
-  ventoy-grub-fix-build-with-binutils-2.36.patch::https://git.savannah.gnu.org/cgit/grub.git/patch/configure.ac?id=b9827513
+  ventoy-grub-fix-build-with-binutils-2.36.patch
   # https://ftp.gnu.org/gnu/unifont/unifont-"$_unifont_ver/unifont-$_unifont_ver".bdf.gz
   git+https://github.com/ipxe/ipxe.git#commit="$_ipxe_ver"
   https://github.com/tianocore/edk2/archive/refs/tags/edk2-"$_edk2_ver".zip
@@ -154,8 +154,8 @@ sha256sums=('f8826dd29afc93ad599cc4840dcac6fa17b60d1ce3e9448dab7c4f4ac693d69c'
             '3cf04ca4a5b4466e624570d980638f8ab72feaed9b94106dd6ed2bed674a4cdf'
             '8121a64145ff317693de80148fbdca6cb73d3f2ed92f66b946949750ab71afe9')
 
-            # Cannot depend on Savannah (cgit) to maintain a stable patch checksum
-            sha256sums[2]='SKIP'
+            # Patch is now vendored locally, so pin the checksum.
+            sha256sums[2]='dfdb2c0682a5ed62cb2b8bbd3d047302171593872bfdc18dfa120f8b963b4260'
 
 # Some components below are notated as follows:
 #

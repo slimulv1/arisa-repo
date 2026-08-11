@@ -45,7 +45,7 @@ pkgbase = ventoy
 	options = !buildflags
 	source = ventoy-1.1.17.tar.gz::https://github.com/ventoy/Ventoy/archive/refs/tags/v1.1.17.tar.gz
 	source = https://ftp.gnu.org/gnu/grub/grub-2.04.tar.xz
-	source = ventoy-grub-fix-build-with-binutils-2.36.patch::https://git.savannah.gnu.org/cgit/grub.git/patch/configure.ac?id=b9827513
+	source = ventoy-grub-fix-build-with-binutils-2.36.patch
 	source = git+https://github.com/ipxe/ipxe.git#commit=3fe683e
 	source = https://github.com/tianocore/edk2/archive/refs/tags/edk2-stable201911.zip
 	source = ventoy-fix-ucs-2-lookup-on-python-3.9.patch::https://github.com/tianocore/edk2/commit/5d864834.patch?full_index=1
@@ -67,7 +67,7 @@ pkgbase = ventoy
 	source = wimboot-binutils-2.42-fix.patch
 	sha256sums = f8826dd29afc93ad599cc4840dcac6fa17b60d1ce3e9448dab7c4f4ac693d69c
 	sha256sums = e5292496995ad42dabe843a0192cf2a2c502e7ffcc7479398232b10a472df77d
-	sha256sums = SKIP
+	sha256sums = dfdb2c0682a5ed62cb2b8bbd3d047302171593872bfdc18dfa120f8b963b4260
 	sha256sums = 5ee49d23d376aeea24269f7605fcaa7fbd326c04cda4e31b8eb7fa15a540ef44
 	sha256sums = c6f691aa91afbaab811a369fe729f61d8e5b58bb5ad79a45446c9ee849c1a60b
 	sha256sums = 032d770f17a92b19e484ef43302cd8eb020d2148c797a65c7e63261960858fa3
