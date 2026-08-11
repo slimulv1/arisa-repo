@@ -24,7 +24,6 @@ visual-studio-code-bin
 localsend
 ttf-vietnamese-tcvn3
 ttf-vietnamese-vni
-zalo-for-linux-bin
 catppuccin-fcitx5-git
 
 # --- Self-maintained packages (local:) ---
@@ -32,3 +31,4 @@ local: linux-arisa
 local: arisa-meta
 local: ttf-ms-win11-base
 local: ventoy
+local: zalo-for-linux-bin
