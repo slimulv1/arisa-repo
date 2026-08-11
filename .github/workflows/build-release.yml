@@ -270,6 +270,16 @@ jobs:
           FAILED=$(cat status-failed-*.txt 2>/dev/null || true)
           rm -f status-*.txt
 
+          # Aggregate per-package source hashes into a manifest that is
+          # published alongside the DB. Build jobs compare against it to decide
+          # rebuild vs. cache-skip (catches source-only changes that do not alter
+          # the package file name).
+          if ls hash-*.txt >/dev/null 2>&1; then
+            rm -f pkg-hashes.txt
+            cat hash-*.txt | sort > pkg-hashes.txt
+            echo "Collected $(wc -l < pkg-hashes.txt) package hash entries."
+          fi
+
           if [[ -z "$BUILT" ]]; then
             echo "has_new_changes=false" >> "$GITHUB_OUTPUT"
           else
@@ -356,6 +366,7 @@ jobs:
           # repo-add emits symlinks (arisa.db -> arisa.db.tar.gz) which the gh CLI
           # tracks correctly when uploading.
           DB_FILES=("${DB}.db" "${DB}.db.tar.gz" "${DB}.files" "${DB}.files.tar.gz")
+          HASH_MANIFEST="pkg-hashes.txt"
 
           echo "Collecting current package names..."
           current_pkgs=()
@@ -374,6 +385,7 @@ jobs:
                   if [[ "$name" == "$dbf" ]]; then is_db=true; break; fi
                 done
                 if [[ "$is_db" == "true" ]]; then continue; fi
+                if [[ "$name" == "$HASH_MANIFEST" ]]; then continue; fi
                 if [[ "$name" == *.pkg.tar.zst ]] \
                    && printf '%s\n' "${current_pkgs[@]}" | grep -q -F -x "$name"; then
                   continue
@@ -399,6 +411,13 @@ jobs:
               retry 3 gh release upload "$TAG" "$f" --repo "$REPO" --clobber
             fi
           done
+
+          # Publish the source-hash manifest last (same atomic switch step):
+          # downstream runs compare against it to skip cached packages.
+          if [[ -f "$HASH_MANIFEST" ]]; then
+            echo "Uploading package hash manifest (atomic switch)..."
+            retry 3 gh release upload "$TAG" "$HASH_MANIFEST" --repo "$REPO" --clobber
+          fi
 
           cd "$GITHUB_WORKSPACE"
           RELEASE_NOTES=$(cat <<EOF

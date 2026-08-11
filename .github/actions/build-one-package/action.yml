@@ -26,6 +26,12 @@ runs:
           tar -xzf "/tmp/repo-db/${REPO_DB_NAME}.files.tar.gz" -C /tmp/repo-files 2>/dev/null || true
         fi
 
+        echo "Fetching package hash manifest..."
+        HASH_MANIFEST=""
+        if gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir /tmp/repo-db --pattern "pkg-hashes.txt" 2>/dev/null; then
+          HASH_MANIFEST="/tmp/repo-db/pkg-hashes.txt"
+        fi
+
         echo "Checking status for $PKG"
         if grep -q 'pkgver()' "$PKG/PKGBUILD"; then
           sudo -u builder bash -lc "cd '$GITHUB_WORKSPACE/$PKG' && makepkg -od --noprepare --skipinteg" >/dev/null 2>&1 || true
@@ -33,6 +39,23 @@ runs:
 
         EXPECTED_PKGS=$(sudo -u builder bash -lc "cd '$GITHUB_WORKSPACE/$PKG' && makepkg --packagelist 2>/dev/null" || true)
         EXPECTED_PKGS="${EXPECTED_PKGS//:/.}"
+
+        # Hash the package source directory (PKGBUILD, .SRCINFO, .install,
+        # patches...). Computed AFTER makepkg -od so that a pkgver() bump that
+        # rewrites the PKGBUILD is captured: any source change forces a rebuild
+        # even if the generated package file name (pkgver-pkgrel) is unchanged.
+        PKG_HASH=""
+        mapfile -t hash_files < <(find "$PKG" -maxdepth 1 -type f | sort)
+        if (( ${#hash_files[@]} > 0 )); then
+          PKG_HASH=$(printf '%s\0' "${hash_files[@]}" | xargs -0 -r sha256sum 2>/dev/null | awk '{print $1}' | sha256sum | cut -d' ' -f1)
+        fi
+        echo "Package source hash for $PKG: ${PKG_HASH:-none}"
+
+        REPO_HASH=""
+        if [[ -n "$HASH_MANIFEST" && -f "$HASH_MANIFEST" ]]; then
+          REPO_HASH=$(awk -v pkg="$PKG" '$1==pkg {print $2; exit}' "$HASH_MANIFEST")
+        fi
+        echo "Stored hash on release for $PKG: ${REPO_HASH:-none}"
 
         NEEDS_BUILD=false
         if [[ -z "$EXPECTED_PKGS" ]]; then
@@ -45,6 +68,15 @@ runs:
               break
             fi
           done
+        fi
+
+        if [[ "$NEEDS_BUILD" == "false" ]]; then
+          if [[ -n "$PKG_HASH" && -n "$REPO_HASH" && "$PKG_HASH" == "$REPO_HASH" ]]; then
+            echo "Package source hash unchanged ($PKG_HASH)."
+          else
+            echo "Package source hash changed/absent (local=${PKG_HASH:-none} repo=${REPO_HASH:-none}). Forcing rebuild."
+            NEEDS_BUILD=true
+          fi
         fi
 
         if [[ "$NEEDS_BUILD" == "false" ]]; then
@@ -61,6 +93,7 @@ runs:
 
         if [[ "$NEEDS_BUILD" == "false" ]]; then
           echo "$PKG" > output/status-skipped-$PKG.txt
+          [[ -n "$PKG_HASH" ]] && echo "$PKG $PKG_HASH" > output/hash-$PKG.txt
         else
           echo "Building $PKG with paru"
           ASSUME_PKGS=$(sudo -u builder bash -lc "cd '$GITHUB_WORKSPACE/$PKG' && source PKGBUILD && echo \${pkgname[@]}")
@@ -86,6 +119,7 @@ runs:
             mv "$PKG"/*.pkg.tar.zst output/
             echo "Build OK: $PKG"
             echo "$PKG" > output/status-built-$PKG.txt
+            [[ -n "$PKG_HASH" ]] && echo "$PKG $PKG_HASH" > output/hash-$PKG.txt
           else
             echo "Build failed for $PKG"
             echo "Triggering fallback mechanism for $PKG..."
