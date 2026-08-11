@@ -7,7 +7,7 @@ pkgver=26.7.10
 _zadarkver=26.2.1
 _commithash=ba3cbcc
 pkgrel=6
-pkgdesc="Zalo for Linux"
+pkgdesc="Unofficial Zalo client for Linux (AppImage with ZaDark theme)"
 arch=('x86_64')
 url="https://github.com/doandat943/zalo-for-linux"
 license=('MIT')
@@ -15,6 +15,7 @@ depends=(
     'sqlite'
     'glibc'
     'zlib'
+    'fuse2'
 )
 optdepends=(
     'wl-clipboard: paste images from clipboard on Wayland'
@@ -41,5 +42,5 @@ sha256sums=(
 package() {
     install -Dm755 "${srcdir}/zalo.AppImage" "${pkgdir}/usr/bin/zalo"
     install -Dm644 "${srcdir}/zalo.desktop" "${pkgdir}/usr/share/applications/zalo.desktop"
-    install -Dm644 "${srcdir}/Zalo.png" "${pkgdir}/opt/zalo/icon.png"
+    install -Dm644 "${srcdir}/Zalo.png" "${pkgdir}/usr/share/pixmaps/zalo.png"
 }

@@ -1,8 +1,11 @@
 [Desktop Entry]
-Comment=
-Name=Zalo
-Exec=/usr/bin/zalo
-Icon=/opt/zalo/icon.png
-Terminal=false
 Type=Application
-StartupWMClass=zalo-for-linux
+Name=Zalo
+GenericName=Instant Messenger
+Comment=Unofficial Zalo client for Linux
+Exec=/usr/bin/zalo
+Icon=zalo
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+Keywords=zalo;chat;messaging;messenger;
+StartupNotify=true

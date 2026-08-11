@@ -1,5 +1,5 @@
 pkgbase = zalo-for-linux-bin
-	pkgdesc = Zalo for Linux
+	pkgdesc = Unofficial Zalo client for Linux (AppImage with ZaDark theme)
 	pkgver = 26.7.10
 	pkgrel = 6
 	url = https://github.com/doandat943/zalo-for-linux
@@ -8,6 +8,7 @@ pkgbase = zalo-for-linux-bin
 	depends = sqlite
 	depends = glibc
 	depends = zlib
+	depends = fuse2
 	optdepends = wl-clipboard: paste images from clipboard on Wayland
 	optdepends = xclip: paste images from clipboard on X11
 	optdepends = deepin-screen-recorder: Screenshot without/with Zalo window button
