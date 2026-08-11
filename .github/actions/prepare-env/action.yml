@@ -10,11 +10,22 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
+        fetch_file() {
+          local url="$1" dest="$2"
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSL --connect-timeout 15 -o "$dest" "$url"; then
+              return 0
+            fi
+            echo "::warning::Download failed (attempt $attempt/5): $url"
+            sleep $((attempt * 5))
+          done
+          return 1
+        }
         echo "Downloading CachyOS v3 makepkg.conf..."
-        curl -sLo /etc/makepkg.conf https://raw.githubusercontent.com/CachyOS/docker-makepkg/refs/heads/master/docker-makepkg-v3/makepkg.conf
+        fetch_file https://raw.githubusercontent.com/CachyOS/docker-makepkg/refs/heads/master/docker-makepkg-v3/makepkg.conf /etc/makepkg.conf
         echo "Downloading CachyOS v3 rust.conf..."
         mkdir -p /etc/makepkg.conf.d
-        curl -sLo /etc/makepkg.conf.d/rust.conf https://raw.githubusercontent.com/CachyOS/docker-makepkg/refs/heads/master/docker-makepkg-v3/rust.conf
+        fetch_file https://raw.githubusercontent.com/CachyOS/docker-makepkg/refs/heads/master/docker-makepkg-v3/rust.conf /etc/makepkg.conf.d/rust.conf
         sed -i 's/^PKGDEST=/#PKGDEST=/g' /etc/makepkg.conf
         sed -i 's/^LOGDEST=/#LOGDEST=/g' /etc/makepkg.conf
         sed -i 's/^PACKAGECARCH=/#PACKAGECARCH=/g' /etc/makepkg.conf
