@@ -97,7 +97,7 @@ jobs:
           echo "OK: $(numfmt --to=iec "$((avail_kb * 1024))") available."
 
       - name: Restore pacman package cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: /var/cache/pacman/pkg
           key: pacman-cache-${{ github.run_id }}
@@ -113,7 +113,7 @@ jobs:
           package: ${{ matrix.package }}
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-${{ matrix.package }}
           path: output/*
@@ -152,7 +152,7 @@ jobs:
           echo "OK: $(numfmt --to=iec "$((avail_kb * 1024))") available."
 
       - name: Restore ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: /tmp/ccache
           key: ccache-kernel-${{ github.run_id }}
@@ -160,7 +160,7 @@ jobs:
             ccache-kernel-
 
       - name: Restore pacman package cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: /var/cache/pacman/pkg
           key: pacman-cache-${{ github.run_id }}
@@ -190,19 +190,19 @@ jobs:
           du -sh /var/cache/pacman/pkg
 
       - name: Save ccache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: /tmp/ccache
           key: ccache-kernel-${{ github.run_id }}
 
       - name: Save pacman package cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: /var/cache/pacman/pkg
           key: pacman-cache-${{ github.run_id }}
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-linux-arisa
           path: output/*
@@ -241,7 +241,7 @@ jobs:
           done
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: output
           pattern: pkg-*
