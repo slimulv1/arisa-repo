@@ -10,7 +10,7 @@ code-marketplace
 cozette-otb
 discord-ptb
 evdi-dkms
-fcitx5-lotus-bin
+fcitx5-lotus-git
 hw-probe
 lianli-linux-git
 libdockapp
@@ -21,7 +21,14 @@ python-pywal16
 python-pywalfox
 spoofdpi
 visual-studio-code-bin
+localsend
+ttf-vietnamese-tcvn3
+ttf-vietnamese-vni
+zalo-for-linux-bin
+catppuccin-fcitx5-git
 
 # --- Self-maintained packages (local:) ---
 local: linux-arisa
 local: arisa-meta
+local: ttf-ms-win11-base
+local: ventoy
