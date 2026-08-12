@@ -119,7 +119,16 @@ jobs:
 
             echo "Not found in CachyOS. Downloading $pkg snapshot from AUR..."
             snap="/tmp/aur-snap-$pkg.tar.gz"
-            if ! curl -fsSL "https://aur.archlinux.org/cgit/aur.git/snapshot/${pkg}.tar.gz" -o "$snap"; then
+            SNAP_OK=false
+            for attempt in 1 2 3; do
+              if curl -fsSL --connect-timeout 15 "https://aur.archlinux.org/cgit/aur.git/snapshot/${pkg}.tar.gz" -o "$snap"; then
+                SNAP_OK=true
+                break
+              fi
+              echo "::warning::Snapshot download failed for $pkg (attempt $attempt/3). Retrying in $((attempt * 5))s..."
+              sleep $((attempt * 5))
+            done
+            if [[ "$SNAP_OK" != "true" ]]; then
               echo "::warning::Snapshot download failed for $pkg"
               FAILED+=("$pkg")
               continue

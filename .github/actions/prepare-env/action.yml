@@ -46,15 +46,52 @@ runs:
         cat "$tmp" > /etc/pacman.conf
         rm -f "$tmp"
 
-        if gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" --json assets -q '.assets[].name' | grep -qx "${REPO_DB_NAME}.db"; then
-        {
-          echo ""
-          echo "[${REPO_DB_NAME}]"
-          echo SigLevel = Optional TrustAll
-          echo "Server = https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
-        } >> /etc/pacman.conf
+        # Retry helper: transient network/CDN failures (e.g. the Fastly SSL
+        # blip seen on 2026-08-11) are retried with backoff. Expected-absence
+        # results ("release not found", "no assets match") are treated as
+        # permanent so a resource that simply does not exist yet is not
+        # sleep-retried (first run / DB not published).
+        retry_cmd() {
+          local desc="$1"; shift
+          local attempts=5 delay=5
+          local i err rc
+          for ((i = 1; i <= attempts; i++)); do
+            err="$(mktemp)"
+            if "$@" 2>"$err"; then
+              rm -f "$err"
+              return 0
+            fi
+            rc=$?
+            if grep -qiE 'release not found|no assets match|HTTP 404|Not Found' "$err"; then
+              echo "::warning::$desc: resource absent, skipping (rc=$rc)"
+              rm -f "$err"
+              return 1
+            fi
+            echo "::warning::$desc failed (attempt $i/$attempts, rc=$rc). Retrying in ${delay}s..."
+            sleep "$delay"
+            delay=$((delay * 2))
+            rm -f "$err"
+          done
+          echo "::error::$desc failed after $attempts attempts."
+          return 1
+        }
+
+        # Add the [arisa] custom repo only if the DB is actually published.
+        # Absence (first run) or an unrecoverable error just skips the repo;
+        # pacman -Sy below remains the real gate for the job.
+        if retry_cmd "check release DB" gh release view "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" --json assets \
+            -q '.assets[].name' \
+            | grep -qx "${REPO_DB_NAME}.db"; then
+          {
+            echo ""
+            echo "[${REPO_DB_NAME}]"
+            echo SigLevel = Optional TrustAll
+            echo "Server = https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
+          } >> /etc/pacman.conf
         fi
-        pacman -Sy
+
+        retry_cmd "pacman -Sy" pacman -Sy
 
     - name: Fix workspace ownership for build user
       shell: bash

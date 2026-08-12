@@ -21,14 +21,42 @@ runs:
         set -uo pipefail
         mkdir -p output /tmp/repo-files /tmp/repo-db
 
+        # Retry helper for gh release downloads. Transient network failures are
+        # retried with backoff; expected absence ("no assets match", release
+        # not published yet) returns immediately so fresh packages are not
+        # stalled before their first real build.
+        download_retry() {
+          local attempts=4 delay=5
+          local i err rc
+          for ((i = 1; i <= attempts; i++)); do
+            err="$(mktemp)"
+            if gh release download "$@" 2>"$err"; then
+              rm -f "$err"
+              return 0
+            fi
+            rc=$?
+            if grep -qiE 'no assets match|release not found|HTTP 404|Not Found' "$err"; then
+              echo "::warning::Download absent from release, skipping retries (rc=$rc)"
+              rm -f "$err"
+              return 1
+            fi
+            echo "::warning::Download failed (attempt $i/$attempts, rc=$rc). Retrying in ${delay}s..."
+            sleep "$delay"
+            delay=$((delay * 2))
+            rm -f "$err"
+          done
+          echo "::error::Download failed after $attempts attempts."
+          return 1
+        }
+
         echo "Fetching database metadata..."
-        if gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir /tmp/repo-db --pattern "${REPO_DB_NAME}.files.tar.gz" 2>/dev/null; then
+        if download_retry "$RELEASE_TAG" --repo "${{ github.repository }}" --dir /tmp/repo-db --pattern "${REPO_DB_NAME}.files.tar.gz"; then
           tar -xzf "/tmp/repo-db/${REPO_DB_NAME}.files.tar.gz" -C /tmp/repo-files 2>/dev/null || true
         fi
 
         echo "Fetching package hash manifest..."
         HASH_MANIFEST=""
-        if gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir /tmp/repo-db --pattern "pkg-hashes.txt" 2>/dev/null; then
+        if download_retry "$RELEASE_TAG" --repo "${{ github.repository }}" --dir /tmp/repo-db --pattern "pkg-hashes.txt"; then
           HASH_MANIFEST="/tmp/repo-db/pkg-hashes.txt"
         fi
 
@@ -83,7 +111,7 @@ runs:
           echo "Package $PKG is up to date. Fetching specific cache from release."
           for pkg_path in $EXPECTED_PKGS; do
             pkg_basename=$(basename "$pkg_path")
-            if ! gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir output --pattern "$pkg_basename" 2>/dev/null; then
+            if ! download_retry "$RELEASE_TAG" --repo "${{ github.repository }}" --dir output --pattern "$pkg_basename"; then
               echo "Failed to fetch $pkg_basename cache. Forcing rebuild."
               NEEDS_BUILD=true
               break
@@ -134,7 +162,7 @@ runs:
                   file_name=$(awk '/^%FILENAME%/{getline; print; exit}' "$desc_file")
                   if [[ -n "$file_name" ]]; then
                     echo "Restoring $file_name from previous release"
-                    if gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" --dir output --pattern "$file_name" 2>/dev/null; then
+                    if download_retry "$RELEASE_TAG" --repo "${{ github.repository }}" --dir output --pattern "$file_name"; then
                       FALLBACK_SUCCESS=true
                       echo "$PKG" > output/status-failed-$PKG.txt
                     fi
