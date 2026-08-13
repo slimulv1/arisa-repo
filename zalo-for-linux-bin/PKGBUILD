@@ -3,10 +3,10 @@ _pkgname=zalo
 pkgname=zalo-for-linux-bin
 provides=(zalo)
 conflicts=(zalo)
-pkgver=26.7.10
+pkgver=26.8.10
 _zadarkver=26.2.1
-_commithash=ba3cbcc
-pkgrel=6
+_commithash=66ebe8a
+pkgrel=1
 pkgdesc="Unofficial Zalo client for Linux (AppImage with ZaDark theme)"
 arch=('x86_64')
 url="https://github.com/doandat943/zalo-for-linux"
@@ -35,7 +35,7 @@ source=(
 )
 options=(!strip !debug)
 sha256sums=(
-    'ca7255c1e5ec9f684a4041e46cfbd4b7c915de155083ff8db4c7b52b765c40a3'
+    '99cff19961a58c125e6b5ad5baa843fecd3140876035b371f54866842d4e8a2c'
     '83b752ca078c7ebca1c5f4318b55f8dd7a668e9292c15cbe9871042cc5ffd9e1'
     '54556414e921d2e72db65cdace024251c05e31ce2e1aa3db82aa330436815445'
 )
