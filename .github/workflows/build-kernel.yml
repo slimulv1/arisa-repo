@@ -26,7 +26,7 @@ jobs:
       kernel: ${{ steps.set-kernel.outputs.kernel }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 1
 
@@ -62,7 +62,7 @@ jobs:
       CCACHE_DIR: /tmp/ccache
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 1
 
@@ -83,7 +83,7 @@ jobs:
           echo "OK: $(numfmt --to=iec "$((avail_kb * 1024))") available."
 
       - name: Restore ccache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/ccache
           key: ccache-kernel-${{ github.sha }}
@@ -91,7 +91,7 @@ jobs:
             ccache-kernel-
 
       - name: Restore pacman package cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /var/cache/pacman/pkg
           key: pacman-cache-${{ github.sha }}
@@ -121,21 +121,21 @@ jobs:
           du -sh /var/cache/pacman/pkg
 
       - name: Save ccache
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: always()
         with:
           path: /tmp/ccache
           key: ccache-kernel-${{ github.sha }}
 
       - name: Save pacman package cache
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: always()
         with:
           path: /var/cache/pacman/pkg
           key: pacman-cache-${{ github.sha }}
 
       - name: Upload kernel artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pkg-linux-arisa
           path: output/*
