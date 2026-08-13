@@ -21,11 +21,13 @@ runs:
           done
           return 1
         }
+        # Pinned 2026-08-13 to CachyOS/docker-makepkg @ 9b0259d9 (reproducible
+        # builds). Bump deliberately: gh api repos/CachyOS/docker-makepkg/commits/master
         echo "Downloading CachyOS v3 makepkg.conf..."
-        fetch_file https://raw.githubusercontent.com/CachyOS/docker-makepkg/refs/heads/master/docker-makepkg-v3/makepkg.conf /etc/makepkg.conf
+        fetch_file https://raw.githubusercontent.com/CachyOS/docker-makepkg/9b0259d98e535487de07b44d7e0e7d73b7a6be29/docker-makepkg-v3/makepkg.conf /etc/makepkg.conf
         echo "Downloading CachyOS v3 rust.conf..."
         mkdir -p /etc/makepkg.conf.d
-        fetch_file https://raw.githubusercontent.com/CachyOS/docker-makepkg/refs/heads/master/docker-makepkg-v3/rust.conf /etc/makepkg.conf.d/rust.conf
+        fetch_file https://raw.githubusercontent.com/CachyOS/docker-makepkg/9b0259d98e535487de07b44d7e0e7d73b7a6be29/docker-makepkg-v3/rust.conf /etc/makepkg.conf.d/rust.conf
         sed -i 's/^PKGDEST=/#PKGDEST=/g' /etc/makepkg.conf
         sed -i 's/^LOGDEST=/#LOGDEST=/g' /etc/makepkg.conf
         sed -i 's/^PACKAGECARCH=/#PACKAGECARCH=/g' /etc/makepkg.conf

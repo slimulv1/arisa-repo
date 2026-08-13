@@ -202,21 +202,8 @@ jobs:
           TAG="${{ env.RELEASE_TAG }}"
           cd output
 
-          retry() {
-            local attempts=$1; shift
-            local delay=10
-            local i
-            for ((i = 1; i <= attempts; i++)); do
-              if "$@"; then
-                return 0
-              fi
-              echo "Attempt $i/$attempts failed, retrying in ${delay}s..."
-              sleep "$delay"
-              delay=$((delay * 2))
-            done
-            echo "Command failed after $attempts attempts: $*" >&2
-            return 1
-          }
+          # Shared retry helper (defined in .github/scripts/retry.sh)
+          source "$GITHUB_WORKSPACE/.github/scripts/retry.sh"
 
           mapfile -t BATCH_PKGS < <(printf '%s' "$BATCH_JSON" | jq -r '.[]')
 
@@ -239,21 +226,8 @@ jobs:
           TAG="${{ env.RELEASE_TAG }}"
           cd output
 
-          retry() {
-            local attempts=$1; shift
-            local delay=10
-            local i
-            for ((i = 1; i <= attempts; i++)); do
-              if "$@"; then
-                return 0
-              fi
-              echo "Attempt $i/$attempts failed, retrying in ${delay}s..."
-              sleep "$delay"
-              delay=$((delay * 2))
-            done
-            echo "Command failed after $attempts attempts: $*" >&2
-            return 1
-          }
+          # Shared retry helper (defined in .github/scripts/retry.sh)
+          source "$GITHUB_WORKSPACE/.github/scripts/retry.sh"
 
           mapfile -t DB_FILES < <(printf '%s' "$DB_JSON" | jq -r '.[]')
           HASH_MANIFEST="${{ steps.prepare.outputs.hash_manifest }}"
@@ -316,21 +290,8 @@ jobs:
           sort pkg-hashes-from-release.txt -o pkg-hashes-from-release.txt
           echo "Generated manifest from release: $(wc -l < pkg-hashes-from-release.txt) entries"
 
-          retry() {
-            local attempts=$1; shift
-            local delay=10
-            local i
-            for ((i = 1; i <= attempts; i++)); do
-              if "$@"; then
-                return 0
-              fi
-              echo "Attempt $i/$attempts failed, retrying in ${delay}s..."
-              sleep "$delay"
-              delay=$((delay * 2))
-            done
-            echo "Command failed after $attempts attempts: $*" >&2
-            return 1
-          }
+          # Shared retry helper (defined in .github/scripts/retry.sh)
+          source "$GITHUB_WORKSPACE/.github/scripts/retry.sh"
 
           echo "Uploading verified manifest from release assets..."
           retry 3 gh release upload "$TAG" pkg-hashes-from-release.txt --repo "$REPO" --clobber
@@ -373,7 +334,9 @@ jobs:
             [[ -n "$asset" ]] || continue
             if ! grep -q -F -x "$asset" /tmp/keep-assets.txt; then
               echo "Deleting stale asset: $asset"
-              gh release delete-asset "$TAG" "$asset" --repo "$REPO" -y || true
+              if ! gh release delete-asset "$TAG" "$asset" --repo "$REPO" -y 2>/tmp/delete-asset.err; then
+                echo "::warning::Failed to delete stale asset $asset: $(tr '\n' ' ' < /tmp/delete-asset.err)"
+              fi
             fi
           done < /tmp/all-assets.txt
 
@@ -426,7 +389,8 @@ jobs:
           EOF
           )
 
-          gh release edit "$TAG" --repo "$REPO" --notes "$RELEASE_NOTES"
+          source "$GITHUB_WORKSPACE/.github/scripts/retry.sh"
+          retry 3 gh release edit "$TAG" --repo "$REPO" --notes "$RELEASE_NOTES"
 
   notify-on-failure:
     name: Notify on publish failure

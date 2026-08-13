@@ -6,7 +6,9 @@
 # GHCR instead, saving roughly 20 minutes of wasted CI time per day).
 #
 # Base: CachyOS v3 container (x86-64-v3 optimised makepkg profile).
-FROM cachyos/cachyos-v3:latest
+# Pinned digest 2026-08-13 (reproducible base). Bump deliberately, e.g.:
+#   docker manifest inspect cachyos/cachyos-v3:latest
+FROM cachyos/cachyos-v3@sha256:bf6368c8fa289031756e7cb92dd6e6da0a6de6f3fd514b1bbc0d52d5d479aa74
 
 # 1. Sync + install all tools the build job previously installed ad-hoc.
 RUN pacman -Syu --noconfirm --needed \

@@ -120,8 +120,9 @@ runs:
         fi
 
         if [[ "$NEEDS_BUILD" == "false" ]]; then
-          echo "$PKG" > output/status-skipped-$PKG.txt
-          [[ -n "$PKG_HASH" ]] && echo "$PKG $PKG_HASH" > output/hash-$PKG.txt
+          # Cache hit — nothing to write to output here; the publish workflow
+          # re-hashes from the actual package files.
+          true
         else
           echo "Building $PKG with paru"
           ASSUME_PKGS=$(sudo -u builder bash -lc "cd '$GITHUB_WORKSPACE/$PKG' && source PKGBUILD && echo \${pkgname[@]}")
@@ -146,8 +147,6 @@ runs:
           if ls "$PKG"/*.pkg.tar.zst >/dev/null 2>&1; then
             mv "$PKG"/*.pkg.tar.zst output/
             echo "Build OK: $PKG"
-            echo "$PKG" > output/status-built-$PKG.txt
-            [[ -n "$PKG_HASH" ]] && echo "$PKG $PKG_HASH" > output/hash-$PKG.txt
           else
             echo "Build failed for $PKG"
             echo "Triggering fallback mechanism for $PKG..."
@@ -164,7 +163,6 @@ runs:
                     echo "Restoring $file_name from previous release"
                     if download_retry "$RELEASE_TAG" --repo "${{ github.repository }}" --dir output --pattern "$file_name"; then
                       FALLBACK_SUCCESS=true
-                      echo "$PKG" > output/status-failed-$PKG.txt
                     fi
                   fi
                 fi
@@ -172,7 +170,6 @@ runs:
             fi
             if [[ "$FALLBACK_SUCCESS" == "false" ]]; then
               echo "Fallback failed for $PKG: no previous files found. Gracefully exiting to ignore package."
-              echo "$PKG" > output/status-failed-$PKG.txt
               exit 0
             fi
           fi
