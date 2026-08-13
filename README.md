@@ -48,7 +48,7 @@ Quét `packages.txt`, với mỗi gói AUR:
 - 🟢 Gói mới build
 - 🟡 Gói không đổi → tải thẳng từ release cũ (cache)
 - 🔴 Build lỗi → khôi phục bản cũ từ release (fallback), không bao giờ mất gói
-- **Kernel build riêng** (`linux-arisa`): job tách biệt với **ccache 5GB** — lần đầu ~3h, lần sau ~18 phút
+- **Kernel build riêng** (`linux-arisa`): job tách biệt với **ccache 5GB** — lần đầu ~3h, lần sau ~18 phút. Mỗi run, job `prepare` tự **so sánh version với upstream `linux-lqx`** (AUR rpc/v5, so sánh `sort -V`): nếu tụt hậu → tự mở issue 🚨 kèm hướng dẫn bump (dedupe issue đang mở — không spam), luôn build được bản local kể cả khi tụt hậu
 - **Atomic publish**: upload packages trước, DB files (`arisa.db/.files` + `.tar.gz`) upload **cuối cùng** → không bao giờ tồn tại DB trỏ vào package thiếu
 - **Caches được chia sẻ** giữa các run (pacman package cache + ccache), tự dọn giữ 3 pacman + 2 ccache kernel mới nhất (luôn dưới trần 10GB của GitHub)
 
@@ -86,7 +86,7 @@ sudo pacman -S arisa-meta    # cài cả đội hình AUR của Arisa
 
 | Gói | Mô tả |
 | :-- | :-- |
-| `linux-arisa` | Kernel Liquorix đổi tên — **giữ nguyên 100% patch/config/cách build** của upstream `linux-lqx` (PDS scheduler, ZEN patches), chỉ đổi tên package + localversion thành `-arisa`. Chia gói: `linux-arisa`, `linux-arisa-headers`, `linux-arisa-docs` |
+| `linux-arisa` | Kernel Liquorix đổi tên — **giữ nguyên 100% patch/config/cách build** của upstream `linux-lqx` (PDS scheduler, ZEN patches), chỉ đổi tên package + localversion thành `-arisa`. Chia gói: `linux-arisa`, `linux-arisa-headers`, `linux-arisa-docs`. CI tự mở issue 🚨 khi tụt hậu upstream |
 | `arisa-meta` | Meta-package: cài toàn bộ đội hình AUR của Arisa trong một lệnh |
 | `ttf-ms-win11-base` | Font Windows 11 base (Segoe UI, Consolas, Cascadia... ) — giữ local để cài trực tiếp |
 | `ventoy` | Ventoy — tạo USB multi-boot. Packaging phức tạp (build nhiều thành phần từ source cũ: grub, edk2, ipxe...), vendor patch cục bộ nên tự maintain |
