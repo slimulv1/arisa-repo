@@ -8,7 +8,8 @@ on:
 permissions:
   contents: write
   actions: write
-  issues: write  # notify-on-failure job opens an issue on build failure
+  issues: write
+  pull-requests: write  # auto-bump creates and auto-merges the version bump PR
 
 concurrency:
   group: kernel-build
@@ -25,6 +26,9 @@ jobs:
     timeout-minutes: 10
     outputs:
       kernel: ${{ steps.set-kernel.outputs.kernel }}
+      behind: ${{ steps.check-upstream.outputs.behind }}
+      upstream_version: ${{ steps.check-upstream.outputs.upstream_version }}
+      local_version: ${{ steps.check-upstream.outputs.local_version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -53,39 +57,179 @@ jobs:
           echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
 
       - name: Check upstream linux-lqx version
+        id: check-upstream
         if: steps.set-kernel.outputs.kernel == 'linux-arisa'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # AUR RPC v5 API (cgit HTML is behind Anubis - use rpc instead).
           AUR_VERSION=$(curl -fsSL 'https://aur.archlinux.org/rpc/v5/info?arg[]=linux-lqx' | jq -r '.results[0].Version | split("-")[0]' 2>/dev/null || echo "")
           if [[ -z "$AUR_VERSION" ]]; then
             echo "::warning::Could not query AUR for linux-lqx version - skipping check"
+            echo "behind=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           LOCAL_VERSION=$(grep '^pkgver=' linux-arisa/PKGBUILD | head -1 | cut -d= -f2)
           if [[ -z "$LOCAL_VERSION" ]]; then
             echo "::warning::Could not read local linux-arisa pkgver - skipping check"
+            echo "behind=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "local=$LOCAL_VERSION upstream=$AUR_VERSION"
+          echo "upstream_version=$AUR_VERSION" >> "$GITHUB_OUTPUT"
+          echo "local_version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
           NEWEST=$(printf '%s\n%s\n' "$AUR_VERSION" "$LOCAL_VERSION" | sort -V | tail -1)
           if [[ "$NEWEST" == "$AUR_VERSION" && "$AUR_VERSION" != "$LOCAL_VERSION" ]]; then
             echo "::warning::linux-arisa ($LOCAL_VERSION) is behind upstream linux-lqx ($AUR_VERSION)"
-            TITLE="🚨 linux-arisa is behind upstream linux-lqx ($LOCAL_VERSION vs $AUR_VERSION)"
-            if [[ -z "$(gh issue list --repo "${{ github.repository }}" --state open --search "$TITLE" --json number -q '.[0].number' 2>/dev/null)" ]]; then
-              gh issue create --repo "${{ github.repository }}" --title "$TITLE" --body "linux-arisa PKGBUILD is behind upstream linux-lqx: local=$LOCAL_VERSION vs upstream=$AUR_VERSION. Bump linux-arisa/PKGBUILD (pkgver, _lqxpatchrel, sha512sums) after reviewing https://aur.archlinux.org/packages/linux-lqx" || echo "::warning::Could not open issue"
+            echo "behind=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "linux-arisa is up to date with upstream"
+            echo "behind=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  auto-bump:
+    needs: prepare
+    if: needs.prepare.outputs.kernel == 'linux-arisa'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      bumped: ${{ steps.bump.outputs.bumped }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
+      - name: No bump needed
+        id: skip
+        if: needs.prepare.outputs.behind != 'true'
+        run: |
+          echo "linux-arisa is up to date - nothing to bump"
+          echo "bumped=false" >> "$GITHUB_OUTPUT"
+
+      - name: Auto-bump linux-arisa PKGBUILD from upstream linux-lqx
+        id: bump
+        if: needs.prepare.outputs.behind == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_VERSION: ${{ needs.prepare.outputs.upstream_version }}
+          LOCAL_VERSION: ${{ needs.prepare.outputs.local_version }}
+        run: |
+          set -u
+          REPO="${{ github.repository }}"
+          PKG=linux-arisa
+          PATCH_DIR=/tmp/lqx-src
+
+          fail_bump() {
+            local reason="$1"
+            echo "::error::Auto-bump failed: $reason"
+            local title="🚨 linux-arisa is behind upstream linux-lqx (${LOCAL_VERSION} vs ${UPSTREAM_VERSION})"
+            if [[ -z "$(gh issue list --repo "$REPO" --state open --search "$title" --json number -q '.[0].number' 2>/dev/null || true)" ]]; then
+              gh issue create --repo "$REPO" --title "$title" \
+                --body "Auto-bump failed: $reason. Bump \`linux-arisa/PKGBUILD\` manually (\`pkgver\`, \`_major\`, \`_lqxpatchrel\`, \`pkgrel\`, \`sha512sums\`) after reviewing https://aur.archlinux.org/packages/linux-lqx" \
+                >/dev/null 2>&1 || echo "::warning::Could not open fallback issue"
             else
               echo "Issue already open - skipping"
             fi
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          # 1) Fetch upstream PKGBUILD (AUR snapshot - same source sync-aur.yml uses)
+          for i in 1 2 3; do
+            curl -fsSL "https://aur.archlinux.org/cgit/aur.git/snapshot/linux-lqx.tar.gz" -o /tmp/linux-lqx.tar.gz && break
+            echo "::warning::AUR snapshot attempt $i failed - retrying"
+            sleep 10
+          done
+          [[ -s /tmp/linux-lqx.tar.gz ]] || fail_bump "could not download AUR snapshot after 3 attempts"
+          rm -rf "$PATCH_DIR"
+          mkdir -p "$PATCH_DIR"
+          tar -xzf /tmp/linux-lqx.tar.gz -C "$PATCH_DIR"
+          UP_PKGBUILD="$PATCH_DIR/linux-lqx/PKGBUILD"
+          [[ -f "$UP_PKGBUILD" ]] || fail_bump "AUR snapshot has no PKGBUILD"
+
+          # 2) Parse upstream values
+          UP_MAJOR=$(sed -n 's/^_major=//p' "$UP_PKGBUILD" | head -1)
+          UP_PATCHREL=$(sed -n 's/^_lqxpatchrel=//p' "$UP_PKGBUILD" | head -1)
+          UP_PKGVER=$(sed -n 's/^pkgver=//p' "$UP_PKGBUILD" | head -1)
+          UP_SHA512=$(awk '/^sha512sums=\(/{f=1} f{print} f&&/\)[[:space:]]*$/{exit}' "$UP_PKGBUILD")
+          [[ -n "$UP_MAJOR" && -n "$UP_PATCHREL" && -n "$UP_PKGVER" && -n "$UP_SHA512" ]] \
+            || fail_bump "incomplete parse of upstream PKGBUILD (major='${UP_MAJOR:-}' patchrel='${UP_PATCHREL:-}' pkgver='${UP_PKGVER:-}')"
+          echo "upstream: major=$UP_MAJOR patchrel=$UP_PATCHREL pkgver=$UP_PKGVER"
+
+          # 3) Apply to the local rebranded PKGBUILD (pkgbase=linux-arisa stays untouched)
+          export UP_MAJOR UP_PATCHREL UP_PKGVER UP_SHA512
+          python3 - <<'PYEOF'
+          import os, re
+          path = "linux-arisa/PKGBUILD"
+          s = open(path, encoding="utf-8").read()
+          assert "pkgbase=linux-arisa" in s, "pkgbase guard violated"
+          assert s.count("sha512sums=(") == 1
+          mapping = {"_major": "UP_MAJOR", "_lqxpatchrel": "UP_PATCHREL", "pkgver": "UP_PKGVER"}
+          for field in mapping:
+              s = re.sub(r"(?m)^%s=.*$" % re.escape(field), "%s=%s" % (field, os.environ[mapping[field]]), s, count=1)
+          s = re.sub(r"(?m)^pkgrel=.*$", "pkgrel=1", s, count=1)
+          s = re.sub(r"(?ms)^sha512sums=\(.*?\)\s*\n?", os.environ["UP_SHA512"].rstrip() + "\n", s, count=1)
+          open(path, "w", encoding="utf-8").write(s)
+          PYEOF
+          grep -q "^pkgver=${UP_PKGVER}$" linux-arisa/PKGBUILD || fail_bump "pkgver was not applied"
+          grep -q "^pkgbase=linux-arisa$" linux-arisa/PKGBUILD || fail_bump "pkgbase guard violated"
+          echo "PKGBUILD updated:"
+          grep -E '^(pkgbase|pkgver|pkgrel|_major|_lqxpatchrel)=' linux-arisa/PKGBUILD
+
+          # 4) Reuse an existing PR for this version, or open a new one
+          BRANCH="auto-bump/${PKG}-${UP_PKGVER}"
+          PR_NUMBER=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number -q '.[0].number' 2>/dev/null || true)
+          if [[ -z "$PR_NUMBER" ]]; then
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" checkout -b "$BRANCH" >/dev/null || fail_bump "could not create branch $BRANCH"
+            git add linux-arisa/PKGBUILD
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "chore(linux-arisa): bump kernel to ${UP_PKGVER}" >/dev/null || fail_bump "commit failed (nothing changed?)"
+            git push -u origin "$BRANCH" >/dev/null 2>&1 || fail_bump "could not push branch $BRANCH"
+            PR_BODY=$(cat <<EOF
+          Automated bump from upstream **linux-lqx ${UP_PKGVER}** (local was ${LOCAL_VERSION}).
+
+          - pkgver → ${UP_PKGVER}
+          - _major → ${UP_MAJOR}, _lqxpatchrel → ${UP_PATCHREL}
+          - sha512sums synced from AUR PKGBUILD
+          - pkgrel reset to 1
+          - pkgbase vẫn là linux-arisa, build vẫn trên CachyOS x86-64-v3
+
+          PR này sẽ được auto-merge khi sẵn sàng; sau đó workflow Build Kernel sẽ chạy lại ngay để build bản mới.
+          EOF
+          )
+            PR_URL=$(gh pr create --repo "$REPO" --title "chore(linux-arisa): bump kernel to ${UP_PKGVER}" --body "$PR_BODY" 2>/dev/null) || fail_bump "gh pr create failed"
+            PR_NUMBER=$(basename "$PR_URL")
+            [[ -n "$PR_NUMBER" && "$PR_NUMBER" =~ ^[0-9]+$ ]] || fail_bump "invalid PR number from create"
+            echo "Created PR #$PR_NUMBER"
           else
-            echo "linux-arisa is up to date with upstream (no issue needed)"
+            echo "PR for $BRANCH already exists (#$PR_NUMBER) - reusing"
+          fi
+
+          # 5) Enable auto-merge (waits mergeability, auto update-branch on conflict, retry, verify)
+          bash "$GITHUB_WORKSPACE/.github/scripts/auto-merge-pr.sh" "$PR_NUMBER" --repo "$REPO" --timeout 600 \
+            || fail_bump "auto-merge could not be enabled for PR #$PR_NUMBER"
+
+          # 6) Wait for the merge, then trigger a fresh kernel build with the new version
+          MERGED=""
+          for i in $(seq 1 60); do
+            MERGED=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json mergedAt -q '.mergedAt' 2>/dev/null || true)
+            [[ -n "$MERGED" ]] && break
+            sleep 10
+          done
+          if [[ -n "$MERGED" ]]; then
+            echo "PR #$PR_NUMBER merged at $MERGED"
+            gh workflow run build-kernel.yml --repo "$REPO" \
+              || echo "::warning::Could not trigger build-kernel.yml — next scheduled run (02:00 UTC) will build ${UP_PKGVER}"
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::PR #$PR_NUMBER not merged within 10 min — the next scheduled run will pick up the bump if it merges later"
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
           fi
 
   build-kernel:
-    needs: prepare
-    if: needs.prepare.outputs.kernel != ''
+    needs: [prepare, auto-bump]
+    # Skip the (stale) build when auto-bump already merged a newer PKGBUILD -
+    # a fresh run was triggered and will build the new version instead.
+    if: needs.prepare.outputs.kernel != '' && needs.auto-bump.outputs.bumped != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     container:
@@ -164,6 +308,7 @@ jobs:
   publish:
     name: Publish Packages to Release
     needs: build-kernel
+    if: needs.build-kernel.result == 'success'
     uses: ./.github/workflows/publish.yml
     with:
       build_run_id: ${{ github.run_id }}
