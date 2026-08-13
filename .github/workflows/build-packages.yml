@@ -1,6 +1,8 @@
 name: Build Packages
 
 on:
+  schedule:
+    - cron: '0 19 * * *'
   push:
     branches: [main]
     paths-ignore:
@@ -13,6 +15,7 @@ on:
 permissions:
   contents: write
   actions: write
+  issues: write  # notify-on-failure job opens an issue on build failure
 
 concurrency:
   group: package-build
@@ -75,20 +78,7 @@ jobs:
           fetch-depth: 1
 
       - name: Free disk space before build
-        run: |
-          set -euo pipefail
-          echo "Disk before cleanup:"
-          df -h / | tail -1
-          rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
-          echo "Disk after cleanup:"
-          df -h / | tail -1
-          # Fail fast on critically low disk instead of failing mid-build.
-          avail_kb=$(df -k --output=avail / | tail -1 | tr -d ' ')
-          if (( avail_kb < 5242880 )); then
-            echo "::error::Less than 5GB available on /. Aborting build."
-            exit 1
-          fi
-          echo "OK: $(numfmt --to=iec "$((avail_kb * 1024))") available."
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/free-disk.sh"
 
       - name: Restore pacman package cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -122,14 +112,23 @@ jobs:
       build_run_id: ${{ github.run_id }}
     secrets: inherit
 
-  # Cancellation cleanup handler
-  cleanup-on-cancel:
-    if: cancelled()
-    needs: build
+  notify-on-failure:
+    name: Notify on build failure
+    needs: [prepare, build]
+    if: always() && (failure() || cancelled())
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Clean up lock artifacts on cancellation
+      - name: Open failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "Package build was cancelled. Cleanup performed."
-          # Any lock cleanup or notification logic here
+          set -euo pipefail
+          TITLE="🚨 Package build failed (run ${{ github.run_id }})"
+          BODY="The package build workflow failed or was cancelled for run [${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+          Triggered by: \`${{ github.event_name }}\` on \`${{ github.ref_name }}\` @ \`${{ github.sha }}\`.
+
+          *Automated notification — details in the run log above.*"
+          gh issue create --repo "${{ github.repository }}" \
+            --title "$TITLE" --body "$BODY" || true
