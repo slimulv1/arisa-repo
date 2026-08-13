@@ -19,6 +19,7 @@ on:
 permissions:
   contents: write
   actions: write
+  issues: write  # notify-on-failure job opens an issue on publish failure
 
 # The concurrency group is repository-scoped (shared across all caller
 # workflows): concurrent publishes SERIALIZE (FIFO) instead of cancelling
@@ -378,22 +379,28 @@ jobs:
 
           echo "Stale asset cleanup complete."
 
-      - name: Prune CI caches (keep 3 newest per prefix)
+      - name: Prune CI caches (keep newest per prefix)
         if: steps.prepare.outputs.has_packages == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for prefix in pacman-cache- ccache-kernel-; do
-            echo "Pruning '$prefix' caches (keeping 3 newest)..."
+          # Keep 2 kernel ccache entries (~3.6GB each) + 3 pacman caches (~214MB
+          # each) so the total stays well under the 10GB repo cache limit and
+          # GitHub never evicts a cache we still need (avoids full kernel rebuilds).
+          prune_prefix() {
+            local prefix="$1" keep="$2"
+            echo "Pruning '$prefix' caches (keeping $keep newest)..."
             mapfile -t ids < <(gh cache list --key "$prefix" --sort created_at --order desc --json id,key -q '.[].id')
             for i in "${!ids[@]}"; do
-              if (( i >= 3 )); then
+              if (( i >= keep )); then
                 echo "  Deleting cache ${ids[$i]}"
                 gh cache delete "${ids[$i]}" -y || true
               fi
             done
-          done
+          }
+          prune_prefix pacman-cache- 3
+          prune_prefix ccache-kernel- 2
 
       - name: Update release notes
         if: steps.prepare.outputs.has_packages == 'true'
@@ -420,3 +427,24 @@ jobs:
           )
 
           gh release edit "$TAG" --repo "$REPO" --notes "$RELEASE_NOTES"
+
+  notify-on-failure:
+    name: Notify on publish failure
+    needs: publish
+    if: always() && (failure() || cancelled())
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Open failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TITLE="🚨 Release publish failed (run ${{ github.run_id }})"
+          BODY="The publish workflow failed or was cancelled for run [${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+          Triggered by: \`${{ github.event_name }}\` on \`${{ github.ref_name }}\` @ \`${{ github.sha }}\`.
+
+          *Automated notification — details in the run log above.*"
+          gh issue create --repo "${{ github.repository }}" \
+            --title "$TITLE" --body "$BODY" || true
