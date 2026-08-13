@@ -198,7 +198,7 @@ git push
 - Tên thư mục = dòng trong `packages.txt`, **không version** (version nằm trong PKGBUILD)
 - PKGBUILD phải build được trong container **CachyOS x86-64-v3** (`makepkg.conf` của CachyOS) — test bằng `makepkg` trên máy CachyOS là chuẩn nhất
 - Gói cần `makedepends` lạ chưa có trong build image → thêm vào `docker/build-image/Dockerfile` (workflow `update-image.yml` tự rebuild image mới)
-- Kernel `linux-arisa` là case đặc biệt: build riêng qua `build-kernel.yml` (ccache, tự so sánh version upstream) — chỉ đụng tới nếu bạn hiểu kernel packaging
+- Kernel `linux-arisa` là case đặc biệt: build riêng qua `build-kernel.yml` (ccache, tự so sánh + **tự bump version** upstream linux-lqx qua PR auto-merge) — chỉ đụng tới nếu bạn hiểu kernel packaging
 - Sau khi sửa PKGBUILD nhớ `makepkg --printsrcinfo > .SRCINFO` (giữ hash-cache ổn định)
 
 ---
@@ -221,7 +221,7 @@ Quét `packages.txt`, với mỗi gói AUR:
 - 🟢 Gói mới build
 - 🟡 Gói không đổi → tải thẳng từ release cũ (cache)
 - 🔴 Build lỗi → khôi phục bản cũ từ release (fallback), không bao giờ mất gói
-- **Kernel build riêng** (`linux-arisa`): job tách biệt với **ccache 5GB** — lần đầu ~3h, lần sau ~18 phút. Mỗi run, job `prepare` tự **so sánh version với upstream `linux-lqx`** (AUR rpc/v5, so sánh `sort -V`): nếu tụt hậu → tự mở issue 🚨 kèm hướng dẫn bump (dedupe issue đang mở — không spam), luôn build được bản local kể cả khi tụt hậu
+- **Kernel build riêng** (`linux-arisa`): job tách biệt với **ccache 5GB** — lần đầu ~3h, lần sau ~18 phút. Mỗi run, job `prepare` tự **so sánh version với upstream `linux-lqx`** (AUR rpc/v5, so sánh `sort -V`); nếu tụt hậu → job `auto-bump` **tự cập nhật PKGBUILD** từ AUR snapshot (`pkgver`, `_major`, `_lqxpatchrel`, `pkgrel`, `sha512sums`) → mở PR → **auto-merge** → chạy lại workflow build bản mới ngay trong đêm (build bản cũ trong run hiện tại được skip, tránh lãng phí). `pkgbase` giữ nguyên `linux-arisa`, build vẫn trên CachyOS x86-64-v3. Nếu không tự bump được → mở issue 🚨 kèm hướng dẫn thủ công (dedupe — không spam)
 - **Atomic publish**: upload packages trước, DB files (`arisa.db/.files` + `.tar.gz`) upload **cuối cùng** → không bao giờ tồn tại DB trỏ vào package thiếu
 - **Caches được chia sẻ** giữa các run (pacman package cache + ccache), tự dọn giữ 3 pacman + 2 ccache kernel mới nhất (luôn dưới trần 10GB của GitHub)
 
@@ -243,7 +243,7 @@ Khi sửa `docker/build-image/Dockerfile` → tự rebuild image `ghcr.io/slimul
 
 | Gói | Mô tả |
 | :-- | :-- |
-| `linux-arisa` | Kernel Liquorix đổi tên — **giữ nguyên 100% patch/config/cách build** của upstream `linux-lqx` (PDS scheduler, ZEN patches), chỉ đổi tên package + localversion thành `-arisa`. Chia gói: `linux-arisa`, `linux-arisa-headers`, `linux-arisa-docs`. CI tự mở issue 🚨 khi tụt hậu upstream |
+| `linux-arisa` | Kernel Liquorix đổi tên — **giữ nguyên 100% patch/config/cách build** của upstream `linux-lqx` (PDS scheduler, ZEN patches), chỉ đổi tên package + localversion thành `-arisa`. Chia gói: `linux-arisa`, `linux-arisa-headers`, `linux-arisa-docs`. CI **tự bump PKGBUILD + auto-merge** khi Linux-Liquorix ra bản mới (chỉ mở issue 🚨 khi không tự bump được) |
 | `arisa-meta` | Meta-package: cài toàn bộ đội hình AUR của Arisa trong một lệnh |
 | `ttf-ms-win11-base` | Font Windows 11 base (Segoe UI, Consolas, Cascadia...) — giữ local để cài trực tiếp |
 | `ventoy` | Ventoy — tạo USB multi-boot. Packaging phức tạp (build nhiều thành phần từ source cũ: grub, edk2, ipxe...), vendor patch cục bộ nên tự maintain |
