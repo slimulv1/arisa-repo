@@ -10,7 +10,8 @@ Kho binary của **Arisa** — repo Arch Linux cá nhân, build tự động 100
 [![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
 <!-- Hàng 2 — CI STATUS (flat-square): 3 workflow -->
-[![Build and Publish](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-release.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-release.yml)
+[![Build Packages](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-packages.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-packages.yml)
+[![Build Kernel](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-kernel.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-kernel.yml)
 [![Sync AUR](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/sync-aur.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/sync-aur.yml)
 [![Update Build Image](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/update-image.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/update-image.yml)
 
@@ -39,7 +40,7 @@ Quét `packages.txt`, với mỗi gói AUR:
 2. Nếu không có → tải **AUR snapshot** (`aur.archlinux.org/cgit/aur.git/snapshot/<pkg>.tar.gz`)
 3. Cập nhật vào repo và mở/update **Pull Request** `aur-sync` để anh review trước khi merge
 
-### 2. Build & Publish (`build-release.yml` — mỗi ngày 19:00 UTC)
+### 2. Build & Publish (`build-packages.yml` — mỗi ngày 19:00 UTC, `build-kernel.yml` — mỗi ngày 02:00 UTC)
 
 Đọc danh sách từ `packages.txt`, tách `linux-arisa` (kernel) ra job riêng, build song song (matrix) trong image tùy biến `ghcr.io/slimulv1/arisa-build:latest` (base `cachyos/cachyos-v3`, preinstall sẵn toolchain, chạy x86-64-v3), sau đó publish toàn bộ lên GitHub Release tag `repository`:
 
@@ -49,7 +50,7 @@ Quét `packages.txt`, với mỗi gói AUR:
 - 🔴 Build lỗi → khôi phục bản cũ từ release (fallback), không bao giờ mất gói
 - **Kernel build riêng** (`linux-arisa`): job tách biệt với **ccache 5GB** — lần đầu ~3h, lần sau ~18 phút
 - **Atomic publish**: upload packages trước, DB files (`arisa.db/.files` + `.tar.gz`) upload **cuối cùng** → không bao giờ tồn tại DB trỏ vào package thiếu
-- **Caches được chia sẻ** giữa các run (pacman package cache + ccache), tự dọn giữ 3 bản mới nhất
+- **Caches được chia sẻ** giữa các run (pacman package cache + ccache), tự dọn giữ 3 pacman + 2 ccache kernel mới nhất (luôn dưới trần 10GB của GitHub)
 
 ### 3. Build Image (`update-image.yml`)
 
@@ -73,6 +74,13 @@ sudo pacman -S arisa-meta    # cài cả đội hình AUR của Arisa
 ```
 
 > ⚠️ Nhị phân build cho **x86-64-v3+** (CPU từ Intel Haswell / AMD Excavator trở lên). Repo **không ký GPG** — SigLevel TrustAll chỉ dùng được vì đây là repo cá nhân tự kiểm soát; hãy tin tưởng kết nối HTTPS tới GitHub.
+
+## 🔒 Security model & trade-offs
+
+- **`SigLevel = Optional TrustAll`**: repo cá nhân tự kiểm soát; toàn bộ file phân phối qua **HTTPS GitHub** (TLS là lớp bảo vệ chính). Không triển khai GPG-sign vì chi phí quản lý key + CI lớn hơn lợi ích với mô hình single-owner; nếu muốn nâng cấp: tạo key riêng, `repo-add --sign` trong job publish, publish `.sig` + public key kèm release.
+- **Actions pin theo commit SHA** (kèm comment `# vX`), Dependabot weekly tự mở PR khi upstream tag dịch chuyển → runner không bao giờ chạy code bị thay đổi ngoài ý muốn.
+- **Nguồn build được pin**: `makepkg.conf`/`rust.conf` từ CachyOS `docker-makepkg` @ commit cố định; base image `cachyos/cachyos-v3` pin theo digest. Image build riêng `ghcr.io/slimulv1/arisa-build:latest` do chính repo tự build (`update-image.yml`).
+- **Token**: chỉ dùng `GITHUB_TOKEN` với permission tối thiểu (`contents`/`actions`/`issues` write), không lưu secret nào.
 
 ## Gói tự maintain (local)
 
