@@ -192,6 +192,9 @@ jobs:
         if: steps.prepare.outputs.has_packages == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          # Pass JSON via env (NOT inline ${{ }}): embedded double quotes in the
+          # JSON would break shell quoting and make jq fail silently, uploading 0.
+          BATCH_JSON: ${{ steps.prepare.outputs.batch_packages }}
         run: |
           set -euo pipefail
           REPO="${{ github.repository }}"
@@ -214,7 +217,7 @@ jobs:
             return 1
           }
 
-          mapfile -t BATCH_PKGS < <(echo "${{ steps.prepare.outputs.batch_packages }}" | jq -r '.[]')
+          mapfile -t BATCH_PKGS < <(printf '%s' "$BATCH_JSON" | jq -r '.[]')
 
           echo "Uploading ${#BATCH_PKGS[@]} batch packages..."
           for pkg in "${BATCH_PKGS[@]}"; do
@@ -228,6 +231,7 @@ jobs:
         if: steps.prepare.outputs.has_packages == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          DB_JSON: ${{ steps.prepare.outputs.db_files }}
         run: |
           set -euo pipefail
           REPO="${{ github.repository }}"
@@ -250,7 +254,7 @@ jobs:
             return 1
           }
 
-          mapfile -t DB_FILES < <(echo "${{ steps.prepare.outputs.db_files }}" | jq -r '.[]')
+          mapfile -t DB_FILES < <(printf '%s' "$DB_JSON" | jq -r '.[]')
           HASH_MANIFEST="${{ steps.prepare.outputs.hash_manifest }}"
 
           echo "Verifying generated database..."
