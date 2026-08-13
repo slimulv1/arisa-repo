@@ -178,19 +178,41 @@ jobs:
             | 🧹 **Pruned / Removed** | `${{ steps.sync.outputs.removed || 'none' }}` |
 
             ---
-            *Vui lòng kiểm tra trạng thái verify build bên dưới trước khi thực hiện merge.*
+            *PR này sẽ được **auto-merge** khi sẵn sàng (không conflict). Nếu bị chặn, vui lòng merge thủ công.*
 
-      - name: Enable auto-merge for the sync PR
+      - name: Enable auto-merge for the sync PR (guarded)
+        id: automerge
         if: steps.cpr.outputs.pull-request-number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
         run: |
-          PR_NUMBER="${{ steps.cpr.outputs.pull-request-number }}"
-          if gh pr merge "$PR_NUMBER" --repo "${{ github.repository }}" --auto --squash; then
-            echo "Auto-merge enabled for PR #$PR_NUMBER"
-          else
-            echo "::warning::Could not enable auto-merge for PR #$PR_NUMBER — merge manually"
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+
+          # Guard: the sync PR may only touch package directories (or
+          # packages.txt). Anything else (.github/, docker/, README, ...)
+          # means the automation misbehaved — never auto-merge that.
+          OUT_OF_BOUNDS=()
+          while IFS= read -r changed; do
+            [[ -n "$changed" ]] || continue
+            [[ "$changed" == packages.txt ]] && continue
+            pkg="${changed%%/*}"
+            if ! grep -q -x "$pkg" packages.txt; then
+              OUT_OF_BOUNDS+=("$changed")
+            fi
+          done < <(gh pr diff "$PR_NUMBER" --repo "$REPO" --name-only 2>/dev/null || true)
+
+          if (( ${#OUT_OF_BOUNDS[@]} > 0 )); then
+            echo "::error::Sync PR #$PR_NUMBER touches files outside package dirs: ${OUT_OF_BOUNDS[*]}"
+            gh pr comment "$PR_NUMBER" --repo "$REPO" \
+              --body "⛔ Auto-merge bị chặn: PR đụng tới các file ngoài thư mục package (\`${OUT_OF_BOUNDS[*]}\`). Vui lòng review thủ công." \
+              || echo "::warning::Could not comment on PR $PR_NUMBER"
+            exit 1
           fi
+
+          bash "$GITHUB_WORKSPACE/.github/scripts/auto-merge-pr.sh" \
+            "$PR_NUMBER" --repo "$REPO" --timeout 600
 
       # Cancellation cleanup handler
       - name: Cleanup on cancellation

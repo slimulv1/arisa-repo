@@ -1,0 +1,44 @@
+name: Auto-merge Dependabot PRs
+
+# Dependabot opens PRs for GitHub Actions updates (see .github/dependabot.yml).
+# This workflow auto-merges them once an owner adds the `automerge` label —
+# explicit opt-in per PR, so nothing merges by surprise.
+#
+# NOTE: pull_request_target runs against the base branch (safe for this
+# workflow since it only inspects PR metadata via the gh CLI, never
+# checkout + execute PR code).
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dependabot-automerge
+  cancel-in-progress: true
+
+jobs:
+  automerge:
+    name: Auto-merge
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      !github.event.pull_request.draft &&
+      contains(github.event.pull_request.labels.*.name, 'automerge')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Arm auto-merge (waits for mergeability, resolves conflicts)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/.github/scripts/auto-merge-pr.sh" \
+            "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --timeout 300
