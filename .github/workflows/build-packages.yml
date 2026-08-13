@@ -10,6 +10,7 @@ on:
       - 'README.md'
       - 'packages.txt'
       - 'docker/**'
+      - 'linux-arisa/**'
   workflow_dispatch: {}
 
 permissions:

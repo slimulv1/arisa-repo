@@ -52,6 +52,37 @@ jobs:
 
           echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
 
+      - name: Check upstream linux-lqx version
+        if: steps.set-kernel.outputs.kernel == 'linux-arisa'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # AUR RPC v5 API (cgit HTML is behind Anubis - use rpc instead).
+          AUR_VERSION=$(curl -fsSL 'https://aur.archlinux.org/rpc/v5/info?arg[]=linux-lqx' | jq -r '.results[0].Version | split("-")[0]' 2>/dev/null || echo "")
+          if [[ -z "$AUR_VERSION" ]]; then
+            echo "::warning::Could not query AUR for linux-lqx version - skipping check"
+            exit 0
+          fi
+          LOCAL_VERSION=$(grep '^pkgver=' linux-arisa/PKGBUILD | head -1 | cut -d= -f2)
+          if [[ -z "$LOCAL_VERSION" ]]; then
+            echo "::warning::Could not read local linux-arisa pkgver - skipping check"
+            exit 0
+          fi
+          echo "local=$LOCAL_VERSION upstream=$AUR_VERSION"
+          NEWEST=$(printf '%s\n%s\n' "$AUR_VERSION" "$LOCAL_VERSION" | sort -V | tail -1)
+          if [[ "$NEWEST" == "$AUR_VERSION" && "$AUR_VERSION" != "$LOCAL_VERSION" ]]; then
+            echo "::warning::linux-arisa ($LOCAL_VERSION) is behind upstream linux-lqx ($AUR_VERSION)"
+            TITLE="🚨 linux-arisa is behind upstream linux-lqx ($LOCAL_VERSION vs $AUR_VERSION)"
+            if [[ -z "$(gh issue list --repo "${{ github.repository }}" --state open --search "$TITLE" --json number -q '.[0].number' 2>/dev/null)" ]]; then
+              gh issue create --repo "${{ github.repository }}" --title "$TITLE" --body "linux-arisa PKGBUILD is behind upstream linux-lqx: local=$LOCAL_VERSION vs upstream=$AUR_VERSION. Bump linux-arisa/PKGBUILD (pkgver, _lqxpatchrel, sha512sums) after reviewing https://aur.archlinux.org/packages/linux-lqx" || echo "::warning::Could not open issue"
+            else
+              echo "Issue already open - skipping"
+            fi
+          else
+            echo "linux-arisa is up to date with upstream (no issue needed)"
+          fi
+
   build-kernel:
     needs: prepare
     if: needs.prepare.outputs.kernel != ''
