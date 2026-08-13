@@ -62,7 +62,7 @@ Thêm vào `/etc/pacman.conf`:
 
 ```ini
 [arisa]
-SigLevel = Optional TrustAll
+SigLevel = Optional DatabaseOptional
 Server = https://github.com/slimulv1/arisa-repo/releases/download/repository
 ```
 
@@ -73,11 +73,11 @@ sudo pacman -Sy
 sudo pacman -S arisa-meta    # cài cả đội hình AUR của Arisa
 ```
 
-> ⚠️ Nhị phân build cho **x86-64-v3+** (CPU từ Intel Haswell / AMD Excavator trở lên). Repo **không ký GPG** — SigLevel TrustAll chỉ dùng được vì đây là repo cá nhân tự kiểm soát; hãy tin tưởng kết nối HTTPS tới GitHub.
+> ⚠️ Nhị phân build cho **x86-64-v3+** (CPU từ Intel Haswell / AMD Excavator trở lên). DB repo được **ký GPG** từ 2026-08-13 — chữ ký `arisa.db.tar.gz.sig` + public key `arisa.gpg` đính kèm mỗi release; xem phần Security model để xác minh.
 
 ## 🔒 Security model & trade-offs
 
-- **`SigLevel = Optional TrustAll`**: repo cá nhân tự kiểm soát; toàn bộ file phân phối qua **HTTPS GitHub** (TLS là lớp bảo vệ chính). Không triển khai GPG-sign vì chi phí quản lý key + CI lớn hơn lợi ích với mô hình single-owner; nếu muốn nâng cấp: tạo key riêng, `repo-add --sign` trong job publish, publish `.sig` + public key kèm release.
+- **`SigLevel = Optional DatabaseOptional`**: DB được ký GPG bằng key riêng của repo (fingerprint `BD8284BAEE6197CF2EC59839A3C506C20357176E`, public key `arisa.gpg` đính kèm release). Xác minh: tải `arisa.gpg`, `pacman-key --add arisa.gpg`, `pacman-key --lsign-key BD8284BAEE6197CF2EC59839A3C506C20357176E`; nâng `SigLevel = Required DatabaseOptional` để bắt buộc. Nếu CI không có secret GPG_PRIVATE_KEY, repo vẫn publish DB không ký (Optional không chặn) — chính sách 2 lớp: TLS HTTPS + GPG.
 - **Actions pin theo commit SHA** (kèm comment `# vX`), Dependabot weekly tự mở PR khi upstream tag dịch chuyển → runner không bao giờ chạy code bị thay đổi ngoài ý muốn.
 - **Nguồn build được pin**: `makepkg.conf`/`rust.conf` từ CachyOS `docker-makepkg` @ commit cố định; base image `cachyos/cachyos-v3` pin theo digest. Image build riêng `ghcr.io/slimulv1/arisa-build:latest` do chính repo tự build (`update-image.yml`).
 - **Token**: chỉ dùng `GITHUB_TOKEN` với permission tối thiểu (`contents`/`actions`/`issues` write), không lưu secret nào.

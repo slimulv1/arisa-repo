@@ -108,10 +108,23 @@ jobs:
         id: prepare
         env:
           GH_TOKEN: ${{ github.token }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           cd output
           shopt -s nullglob
+
+          # Import the GPG signing key if a secret is configured (optional
+          # signing: the repository works unsigned too, see README).
+          if [[ -n "${GPG_PRIVATE_KEY:-}" ]]; then
+            if echo "$GPG_PRIVATE_KEY" | gpg --batch --import 2>/tmp/gpg-import.err; then
+              echo "GPG signing key imported successfully"
+            else
+              echo "::warning::Failed to import GPG key - DB will be unsigned: $(tr '\n' ' ' < /tmp/gpg-import.err)"
+            fi
+          else
+            echo "No GPG_PRIVATE_KEY secret set - publishing unsigned database"
+          fi
 
           # Batch = packages built by the caller workflow (already in cwd).
           BATCH_PKGS=()
@@ -146,7 +159,14 @@ jobs:
           # per version, idempotent re-publish (--clobber), and matches
           # build-one-package EXPECTED_PKGS.
           echo "Generating pacman database from union set..."
-          repo-add "${REPO_DB_NAME}.db.tar.gz" "${ALL_PKGS[@]}"
+          SIGN_ARGS=()
+          if gpg --batch --list-secret-keys >/dev/null 2>&1; then
+            SIGN_ARGS=(--sign)
+            echo "GPG signing key present - signing package database"
+          else
+            echo "No GPG signing key available - publishing unsigned database"
+          fi
+          repo-add "${SIGN_ARGS[@]}" "${REPO_DB_NAME}.db.tar.gz" "${ALL_PKGS[@]}"
 
           # Hash manifest keyed by SOURCE package name (strip
           # -pkgver-pkgrel-arch): build-one-package looks up REPO_HASH via
@@ -250,6 +270,23 @@ jobs:
             retry 3 gh release upload "$TAG" "$HASH_MANIFEST" --repo "$REPO" --clobber
           fi
 
+          # Upload DB signatures (created by repo-add --sign) if present
+          for sig in "${REPO_DB_NAME}.db.tar.gz.sig" "${REPO_DB_NAME}.files.tar.gz.sig"; do
+            if [[ -f "$sig" ]]; then
+              echo "Uploading signature $sig (atomic switch)..."
+              retry 3 gh release upload "$TAG" "$sig" --repo "$REPO" --clobber
+            fi
+          done
+
+          # Publish the signing public key so users can verify the DB
+          if gpg --batch --list-secret-keys >/dev/null 2>&1; then
+            gpg --armor --export > arisa.gpg
+            if [[ -s arisa.gpg ]]; then
+              echo "Uploading signing public key arisa.gpg..."
+              retry 3 gh release upload "$TAG" arisa.gpg --repo "$REPO" --clobber
+            fi
+          fi
+
       - name: Generate manifest from release assets (source of truth)
         if: steps.prepare.outputs.has_packages == 'true'
         id: manifest
@@ -319,8 +356,8 @@ jobs:
             echo "$f"
           done > /tmp/current-pkgs.txt
 
-          DB_FILES=("${REPO_DB_NAME}.db" "${REPO_DB_NAME}.db.tar.gz" "${REPO_DB_NAME}.files" "${REPO_DB_NAME}.files.tar.gz")
-          HASH_MANIFESTS=("pkg-hashes.txt" "pkg-hashes-from-release.txt")
+          DB_FILES=("${REPO_DB_NAME}.db" "${REPO_DB_NAME}.db.tar.gz" "${REPO_DB_NAME}.files" "${REPO_DB_NAME}.files.tar.gz" "${REPO_DB_NAME}.db.tar.gz.sig" "${REPO_DB_NAME}.files.tar.gz.sig")
+          HASH_MANIFESTS=("pkg-hashes.txt" "pkg-hashes-from-release.txt" "arisa.gpg")
 
           # Build keep list
           > /tmp/keep-assets.txt

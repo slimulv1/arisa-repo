@@ -12,7 +12,7 @@ FROM cachyos/cachyos-v3@sha256:bf6368c8fa289031756e7cb92dd6e6da0a6de6f3fd514b1bb
 
 # 1. Sync + install all tools the build job previously installed ad-hoc.
 RUN pacman -Syu --noconfirm --needed \
-        git subversion mercurial sudo rsync github-cli fakeroot \
+        git subversion mercurial sudo rsync github-cli fakeroot gnupg \
         binutils pacman-contrib ccache paru curl awk tar jq \
     && pacman -Scc --noconfirm
 
