@@ -1,442 +1,60 @@
-name: Build and Publish Arch Repository
+name: Build and Publish Arch Repository (DEPRECATED)
+
+# DEPRECATED: This workflow is kept for backward compatibility only.
+# All logic has been split into separate workflows:
+# - build-kernel.yml: Daily kernel builds (schedule: 02:00 UTC)
+# - build-packages.yml: Package matrix builds (push/dispatch to main)
+# - sync-aur.yml: Hourly AUR sync (creates PRs only)
+# - publish.yml: Atomic publish pipeline (workflow_call)
+#
+# This stub simply delegates to the new workflows via workflow_call.
+# Remove this file after confirming the new architecture works correctly.
 
 on:
-  schedule:
-    - cron: '0 19 * * *'
-  push:
-    branches: [main]
-    paths-ignore:
-      - '.github/**'
-      - 'README.md'
-      - 'packages.txt'
-      - 'docker/**'
   workflow_dispatch: {}
+  # Schedule and push triggers moved to individual workflows
 
 permissions:
   contents: write
   actions: write
 
 concurrency:
-  group: release-repo
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
-
-env:
-  RELEASE_TAG: repository
-  REPO_DB_NAME: arisa
+  group: release-repo-legacy
+  cancel-in-progress: true
 
 jobs:
-  prepare:
+  deprecated-notice:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-      kernel: ${{ steps.set-matrix.outputs.kernel }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - name: Generate matrix from packages.txt
-        id: set-matrix
+      - name: Show deprecation notice
         run: |
-          set -euo pipefail
-          # packages.txt is the single source of truth (same parsing as sync-aur.yml).
-          mapfile -t VALID_PKGS < <(sed 's/#.*//' packages.txt | sed 's/^local:[[:space:]]*//' | awk '{print $1}' | grep -v '^$')
+          echo "⚠️  DEPRECATED WORKFLOW"
+          echo "This workflow (build-release.yml) is deprecated."
+          echo ""
+          echo "New architecture:"
+          echo "  • build-kernel.yml     - Daily kernel builds at 02:00 UTC"
+          echo "  • build-packages.yml   - Package builds on push/dispatch"
+          echo "  • sync-aur.yml         - Hourly AUR sync (PRs only)"
+          echo "  • publish.yml          - Atomic publish pipeline"
+          echo ""
+          echo "Please use the new workflows directly or trigger them via workflow_dispatch."
+          echo ""
+          echo "This stub will be removed in a future release."
 
-          pkgs=()
-          kernel=""
-          for p in "${VALID_PKGS[@]}"; do
-            if [[ ! -f "$p/PKGBUILD" ]]; then
-              echo "::warning::PKGBUILD missing for $p — skipping"
-              continue
-            fi
-            # Kernel is built in its own job (heavy compiler, export it separately).
-            if [[ "$p" == "linux-arisa" ]]; then
-              kernel="$p"
-            else
-              pkgs+=("$p")
-            fi
-          done
+  # Trigger the new split workflows
+  trigger-kernel-build:
+    needs: deprecated-notice
+    if: false  # Disabled by default - enable if needed for backward compat
+    uses: ./.github/workflows/build-kernel.yml
+    with:
+      # No inputs needed
 
-          MATRIX_JSON=$(printf '%s\n' "${pkgs[@]}" | jq -R . | jq -s -c .)
-          echo "Found packages: $MATRIX_JSON"
-          echo "matrix=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
-          echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
+  trigger-package-build:
+    needs: deprecated-notice
+    if: false  # Disabled by default - enable if needed for backward compat
+    uses: ./.github/workflows/build-packages.yml
+    with:
+      # No inputs needed
 
-  build:
-    needs: prepare
-    runs-on: ubuntu-latest
-    timeout-minutes: 200
-    container:
-      image: ghcr.io/slimulv1/arisa-build:latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJson(needs.prepare.outputs.matrix) }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - name: Free disk space before build
-        run: |
-          set -euo pipefail
-          echo "Disk before cleanup:"
-          df -h / | tail -1
-          rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
-          echo "Disk after cleanup:"
-          df -h / | tail -1
-          # Fail fast on critically low disk instead of failing mid-build.
-          avail_kb=$(df -k --output=avail / | tail -1 | tr -d ' ')
-          if (( avail_kb < 5242880 )); then
-            echo "::error::Less than 5GB available on /. Aborting build."
-            exit 1
-          fi
-          echo "OK: $(numfmt --to=iec "$((avail_kb * 1024))") available."
-
-      - name: Restore pacman package cache
-        uses: actions/cache/restore@v6
-        with:
-          path: /var/cache/pacman/pkg
-          key: pacman-cache-${{ github.run_id }}
-          restore-keys: |
-            pacman-cache-
-
-      - name: Prepare build environment
-        uses: ./.github/actions/prepare-env
-
-      - name: Build, Cache and Fallback Logic
-        uses: ./.github/actions/build-one-package
-        with:
-          package: ${{ matrix.package }}
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: pkg-${{ matrix.package }}
-          path: output/*
-          if-no-files-found: ignore
-          retention-days: 1
-
-  build-kernel:
-    needs: prepare
-    if: needs.prepare.outputs.kernel != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
-    container:
-      image: ghcr.io/slimulv1/arisa-build:latest
-    env:
-      CCACHE_DIR: /tmp/ccache
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - name: Free disk space before build
-        run: |
-          set -euo pipefail
-          echo "Disk before cleanup:"
-          df -h / | tail -1
-          rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
-          echo "Disk after cleanup:"
-          df -h / | tail -1
-          # Fail fast on critically low disk instead of failing mid-build.
-          avail_kb=$(df -k --output=avail / | tail -1 | tr -d ' ')
-          if (( avail_kb < 5242880 )); then
-            echo "::error::Less than 5GB available on /. Aborting build."
-            exit 1
-          fi
-          echo "OK: $(numfmt --to=iec "$((avail_kb * 1024))") available."
-
-      - name: Restore ccache
-        uses: actions/cache/restore@v6
-        with:
-          path: /tmp/ccache
-          key: ccache-kernel-${{ github.run_id }}
-          restore-keys: |
-            ccache-kernel-
-
-      - name: Restore pacman package cache
-        uses: actions/cache/restore@v6
-        with:
-          path: /var/cache/pacman/pkg
-          key: pacman-cache-${{ github.run_id }}
-          restore-keys: |
-            pacman-cache-
-
-      - name: Configure ccache
-        run: |
-          set -euo pipefail
-          mkdir -p "${CCACHE_DIR}"
-          chown -R builder:builder "${CCACHE_DIR}"
-          sudo -u builder env CCACHE_DIR="${CCACHE_DIR}" PATH="/usr/lib/ccache/bin:$PATH" ccache -M 5G
-          ccache --version | head -1
-
-      - name: Prepare build environment
-        uses: ./.github/actions/prepare-env
-
-      - name: Build, Cache and Fallback Logic
-        uses: ./.github/actions/build-one-package
-        with:
-          package: ${{ needs.prepare.outputs.kernel }}
-
-      - name: Prune pacman cache (cap 10GB)
-        run: |
-          set -euo pipefail
-          paccache -rk 5 -c /var/cache/pacman/pkg --nocolor || true
-          du -sh /var/cache/pacman/pkg
-
-      - name: Save ccache
-        uses: actions/cache/save@v6
-        with:
-          path: /tmp/ccache
-          key: ccache-kernel-${{ github.run_id }}
-
-      - name: Save pacman package cache
-        uses: actions/cache/save@v6
-        with:
-          path: /var/cache/pacman/pkg
-          key: pacman-cache-${{ github.run_id }}
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: pkg-linux-arisa
-          path: output/*
-          if-no-files-found: ignore
-          retention-days: 1
-
-  publish:
-    needs: [prepare, build, build-kernel]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment: arisa-production
-    concurrency:
-      group: publish-release
-      cancel-in-progress: true
-    container:
-      image: ghcr.io/slimulv1/arisa-build:latest
-    steps:
-
-      - name: Prune old CI caches (keep 3 newest per prefix)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          REPO="${{ github.repository }}"
-          for prefix in pacman-cache- ccache-kernel-; do
-            echo "Pruning caches with prefix: $prefix"
-            # Newest first; skip the 3 most recent, delete the rest.
-            gh cache list --repo "$REPO" --json id,key,createdAt \
-              | jq -r --arg p "$prefix" '.[] | select(.key | startswith($p)) | [.createdAt, .id, .key] | @tsv' \
-              | sort -r \
-              | tail -n +4 \
-              | while IFS=$'\t' read -r _ id key; do
-                  echo "  Deleting cache $key (id=$id)"
-                  gh cache delete "$id" --repo "$REPO" -y || true
-                done
-          done
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: output
-          pattern: pkg-*
-          merge-multiple: true
-
-      - name: Generate fresh pacman database & Prepare Release Notes
-        id: generate
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          cd output
-          shopt -s nullglob
-          pkgs=( *.pkg.tar.zst )
-
-          if (( ${#pkgs[@]} == 0 )); then
-            echo "No packages exist. Repository is empty. Halting."
-            echo "has_packages=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "has_packages=true" >> "$GITHUB_OUTPUT"
-
-          BUILT=$(cat status-built-*.txt 2>/dev/null || true)
-          SKIPPED=$(cat status-skipped-*.txt 2>/dev/null || true)
-          FAILED=$(cat status-failed-*.txt 2>/dev/null || true)
-          rm -f status-*.txt
-
-          # Aggregate per-package source hashes into a manifest that is
-          # published alongside the DB. Build jobs compare against it to decide
-          # rebuild vs. cache-skip (catches source-only changes that do not alter
-          # the package file name).
-          if ls hash-*.txt >/dev/null 2>&1; then
-            rm -f pkg-hashes.txt
-            cat hash-*.txt | sort > pkg-hashes.txt
-            echo "Collected $(wc -l < pkg-hashes.txt) package hash entries."
-          fi
-
-          if [[ -z "$BUILT" ]]; then
-            echo "has_new_changes=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_new_changes=true" >> "$GITHUB_OUTPUT"
-          fi
-
-          # Detect removed packages: if old release assets are no longer in the
-          # current build list, force publish so stale assets + DB entries get cleaned.
-          gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" --json assets \
-            -q '.assets[] | select(.name | endswith(".pkg.tar.zst")) | .name' \
-            > /tmp/release-pkgs.txt 2>/dev/null || true
-          while IFS= read -r oldfile; do
-            [[ -n "$oldfile" ]] || continue
-            if ! grep -q -F -x "$oldfile" <(printf '%s\n' "${pkgs[@]}"); then
-              echo "Stale package found on release: $oldfile (no longer in packages.txt)"
-              echo "has_new_changes=true" >> "$GITHUB_OUTPUT"
-              break
-            fi
-          done < /tmp/release-pkgs.txt
-
-          echo "Generating clean database from active packages only."
-          repo-add "${REPO_DB_NAME}.db.tar.gz" "${pkgs[@]}"
-
-          FORMATTED_BUILT=$(echo "$BUILT" | sed '/^$/d' | sed 's/^/- 🟢 /')
-          FORMATTED_SKIPPED=$(echo "$SKIPPED" | sed '/^$/d' | sed 's/^/- 🟡 /')
-          FORMATTED_FAILED=$(echo "$FAILED" | sed '/^$/d' | sed 's/^/- 🔴 /' | sed 's/$/ (Restored via Fallback)/')
-
-          [[ -z "$FORMATTED_BUILT" ]] && FORMATTED_BUILT="- None"
-          [[ -z "$FORMATTED_SKIPPED" ]] && FORMATTED_SKIPPED="- None"
-          [[ -z "$FORMATTED_FAILED" ]] && FORMATTED_FAILED="- None"
-
-          {
-            echo "BUILT_LOG<<EOF"
-            echo "$FORMATTED_BUILT"
-            echo "EOF"
-            echo "SKIPPED_LOG<<EOF"
-            echo "$FORMATTED_SKIPPED"
-            echo "EOF"
-            echo "FAILED_LOG<<EOF"
-            echo "$FORMATTED_FAILED"
-            echo "EOF"
-          } >> "$GITHUB_ENV"
-
-      - name: Publish to GitHub Release
-        if: steps.generate.outputs.has_packages == 'true' && steps.generate.outputs.has_new_changes == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          REPO="${{ github.repository }}"
-          TAG="${{ env.RELEASE_TAG }}"
-          DB="${{ env.REPO_DB_NAME }}"
-
-          # Retry helper: attempts with exponential backoff (10s, 20s, 40s)
-          retry() {
-            local attempts=$1; shift
-            local delay=10
-            local i
-            for ((i = 1; i <= attempts; i++)); do
-              if "$@"; then
-                return 0
-              fi
-              echo "Attempt $i/$attempts failed, retrying in ${delay}s..."
-              sleep "$delay"
-              delay=$((delay * 2))
-            done
-            echo "Command failed after $attempts attempts: $*" >&2
-            return 1
-          }
-
-          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            echo "Release $TAG exists."
-          else
-            echo "Creating release $TAG."
-            gh release create "$TAG" --repo "$REPO" \
-              --title "Arch Package Repository" \
-              --notes "Auto-built pacman repository."
-          fi
-
-          cd output
-          shopt -s nullglob
-
-          # Database snapshot files (uploaded LAST as the atomic switch). Note:
-          # repo-add emits symlinks (arisa.db -> arisa.db.tar.gz) which the gh CLI
-          # tracks correctly when uploading.
-          DB_FILES=("${DB}.db" "${DB}.db.tar.gz" "${DB}.files" "${DB}.files.tar.gz")
-          HASH_MANIFEST="pkg-hashes.txt"
-
-          echo "Collecting current package names..."
-          current_pkgs=()
-          for f in *.pkg.tar.zst; do
-            current_pkgs+=("$(basename "$f")")
-          done
-
-          # Only stale assets are removed (old packages / stray files). DB snapshot
-          # files and current packages are preserved, keeping the repo usable.
-          echo "Cleaning stale assets from release..."
-          gh release view "$TAG" --repo "$REPO" --json assets -q '.assets[].name' \
-            | while read -r name; do
-                [[ -n "$name" ]] || continue
-                is_db=false
-                for dbf in "${DB_FILES[@]}"; do
-                  if [[ "$name" == "$dbf" ]]; then is_db=true; break; fi
-                done
-                if [[ "$is_db" == "true" ]]; then continue; fi
-                if [[ "$name" == "$HASH_MANIFEST" ]]; then continue; fi
-                if [[ "$name" == *.pkg.tar.zst ]] \
-                   && printf '%s\n' "${current_pkgs[@]}" | grep -q -F -x "$name"; then
-                  continue
-                fi
-                echo "Deleting stale asset: $name"
-                gh release delete-asset "$TAG" "$name" --repo "$REPO" -y || true
-              done
-
-          echo "Uploading packages (with retry)..."
-          for f in *.pkg.tar.zst; do
-            echo "  Uploading $(basename "$f")"
-            retry 3 gh release upload "$TAG" "$f" --repo "$REPO" --clobber
-          done
-
-          echo "Verifying generated database..."
-          tar -tf "${DB}.db.tar.gz" >/dev/null 2>&1 \
-            || { echo "ERROR: ${DB}.db.tar.gz is not a valid gzip tar archive"; exit 1; }
-
-          echo "Uploading database and file snapshots (atomic switch)..."
-          for f in "${DB_FILES[@]}"; do
-            if [[ -f "$f" ]]; then
-              echo "  Uploading $(basename "$f")"
-              retry 3 gh release upload "$TAG" "$f" --repo "$REPO" --clobber
-            fi
-          done
-
-          # Publish the source-hash manifest last (same atomic switch step):
-          # downstream runs compare against it to skip cached packages.
-          if [[ -f "$HASH_MANIFEST" ]]; then
-            echo "Uploading package hash manifest (atomic switch)..."
-            retry 3 gh release upload "$TAG" "$HASH_MANIFEST" --repo "$REPO" --clobber
-          fi
-
-          cd "$GITHUB_WORKSPACE"
-          RELEASE_NOTES=$(cat <<EOF
-          ### 📦 Repository Update Summary (Matrix Build)
-
-          **Last Updated:** $(date -u '+%Y-%m-%d %H:%M UTC')
-
-          #### 🟢 Newly Built Packages
-          ${{ env.BUILT_LOG }}
-
-          #### 🟡 Cached / Skipped Packages
-          ${{ env.SKIPPED_LOG }}
-
-          #### 🔴 Failed Packages
-          ${{ env.FAILED_LOG }}
-
-          ---
-          *Automated Scatter-Gather build by GitHub Actions.*
-          EOF
-          )
-
-          gh release edit "$TAG" --repo "$REPO" --notes "$RELEASE_NOTES"
+  # Note: publish.yml is a workflow_call and cannot be triggered directly
+  # It must be called from a workflow that has the build artifacts

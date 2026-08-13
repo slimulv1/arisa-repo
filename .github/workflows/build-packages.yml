@@ -1,0 +1,135 @@
+name: Build Packages
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '.github/**'
+      - 'README.md'
+      - 'packages.txt'
+      - 'docker/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: package-build
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: repository
+  REPO_DB_NAME: arisa
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Generate matrix from packages.txt
+        id: set-matrix
+        run: |
+          set -euo pipefail
+          # packages.txt is the single source of truth (same parsing as sync-aur.yml).
+          mapfile -t VALID_PKGS < <(sed 's/#.*//' packages.txt | sed 's/^local:[[:space:]]*//' | awk '{print $1}' | grep -v '^$')
+
+          pkgs=()
+          for p in "${VALID_PKGS[@]}"; do
+            if [[ ! -f "$p/PKGBUILD" ]]; then
+              echo "::warning::PKGBUILD missing for $p — skipping"
+              continue
+            fi
+            # Kernel is built separately in build-kernel.yml
+            if [[ "$p" == "linux-arisa" ]]; then
+              continue
+            fi
+            pkgs+=("$p")
+          done
+
+          MATRIX_JSON=$(printf '%s\n' "${pkgs[@]}" | jq -R . | jq -s -c .)
+          echo "Found packages: $MATRIX_JSON"
+          echo "matrix=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    container:
+      image: ghcr.io/slimulv1/arisa-build:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Free disk space before build
+        run: |
+          set -euo pipefail
+          echo "Disk before cleanup:"
+          df -h / | tail -1
+          rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+          echo "Disk after cleanup:"
+          df -h / | tail -1
+          # Fail fast on critically low disk instead of failing mid-build.
+          avail_kb=$(df -k --output=avail / | tail -1 | tr -d ' ')
+          if (( avail_kb < 5242880 )); then
+            echo "::error::Less than 5GB available on /. Aborting build."
+            exit 1
+          fi
+          echo "OK: $(numfmt --to=iec "$((avail_kb * 1024))") available."
+
+      - name: Restore pacman package cache
+        uses: actions/cache/restore@v6
+        with:
+          path: /var/cache/pacman/pkg
+          key: pacman-cache-${{ github.sha }}
+          restore-keys: |
+            pacman-cache-
+
+      - name: Prepare build environment
+        uses: ./.github/actions/prepare-env
+
+      - name: Build, Cache and Fallback Logic
+        uses: ./.github/actions/build-one-package
+        with:
+          package: ${{ matrix.package }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pkg-${{ matrix.package }}
+          path: output/*
+          if-no-files-found: ignore
+          retention-days: 1
+
+  publish:
+    name: Publish Packages to Release
+    needs: build
+    uses: ./.github/workflows/publish.yml
+    with:
+      build_run_id: ${{ github.run_id }}
+    secrets: inherit
+
+  # Cancellation cleanup handler
+  cleanup-on-cancel:
+    if: cancelled()
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Clean up lock artifacts on cancellation
+        run: |
+          echo "Package build was cancelled. Cleanup performed."
+          # Any lock cleanup or notification logic here

@@ -1,0 +1,417 @@
+name: Publish Repository
+
+on:
+  workflow_call:
+    inputs:
+      build_run_id:
+        description: 'Run ID of the caller workflow that produced the artifacts'
+        type: string
+        required: true
+      kernel_artifact_name:
+        description: 'Name of the kernel artifact'
+        type: string
+        default: 'pkg-linux-arisa'
+      packages_artifact_prefix:
+        description: 'Prefix for package artifacts'
+        type: string
+        default: 'pkg-'
+
+permissions:
+  contents: write
+  actions: write
+
+# The concurrency group is repository-scoped (shared across all caller
+# workflows): concurrent publishes SERIALIZE (FIFO) instead of cancelling
+# each other. cancel-in-progress: false so a publish in flight is never
+# killed mid-way (no broken DB window).
+concurrency:
+  group: publish-repo
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: repository
+  REPO_DB_NAME: arisa
+
+jobs:
+  publish:
+    name: Publish Packages to Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: arisa-production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Download kernel artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: output
+          pattern: ${{ inputs.kernel_artifact_name }}
+          merge-multiple: true
+          run-id: ${{ inputs.build_run_id }}
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: output
+          pattern: ${{ inputs.packages_artifact_prefix }}*
+          merge-multiple: true
+          run-id: ${{ inputs.build_run_id }}
+
+      - name: Union with current release packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ env.RELEASE_TAG }}"
+          cd output
+
+          if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release does not exist yet — nothing to union."
+            exit 0
+          fi
+
+          # Source name of a makepkg artifact: pkgname-pkgver-pkgrel-arch.pkg.tar.zst
+          strip_source() { echo "${1%-*-*-*.pkg.tar.zst}"; }
+
+          # Batch = packages just built by the caller (root of output/)
+          declare -A batch_bases=()
+          shopt -s nullglob
+          for f in *.pkg.tar.zst; do
+            batch_bases["$(strip_source "$f")"]=1
+          done
+
+          # Carry over every package on the release that the batch does not
+          # already supersede (same source name). Keeps the repo complete
+          # when a caller only rebuilt a subset of packages.
+          mkdir -p union
+          gh release view "$TAG" --repo "$REPO" --json assets \
+            -q '.assets[] | select(.name | endswith(".pkg.tar.zst")) | .name' \
+            | sort > /tmp/release-pkgs.txt
+
+          while IFS= read -r name; do
+            [[ -n "$name" ]] || continue
+            if [[ -n "${batch_bases[$(strip_source "$name")]:-}" ]]; then
+              echo "Skip (superseded by batch): $name"
+              continue
+            fi
+            echo "Union from release: $name"
+            gh release download "$TAG" --repo "$REPO" --pattern "$name" --dir union --clobber
+          done < /tmp/release-pkgs.txt
+
+      - name: Prepare database and manifest (no renaming, idempotent)
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd output
+          shopt -s nullglob
+
+          # Batch = packages built by the caller workflow (already in cwd).
+          BATCH_PKGS=()
+          for f in *.pkg.tar.zst; do
+            BATCH_PKGS+=("$f")
+          done
+
+          # Union files were downloaded into union/ — move them up so the
+          # whole current package set lives in one directory.
+          for f in union/*.pkg.tar.zst; do
+            mv "$f" .
+          done
+          rmdir union 2>/dev/null || true
+
+          ALL_PKGS=()
+          for f in *.pkg.tar.zst; do
+            ALL_PKGS+=("$f")
+          done
+
+          if (( ${#ALL_PKGS[@]} == 0 )); then
+            echo "No packages available (neither built nor on release). Halting."
+            echo "has_packages=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "has_packages=true" >> "$GITHUB_OUTPUT"
+          echo "Batch packages: ${#BATCH_PKGS[@]}"
+          echo "Carried-over packages: $(( ${#ALL_PKGS[@]} - ${#BATCH_PKGS[@]} ))"
+          echo "Total packages: ${#ALL_PKGS[@]}"
+
+          # Keep makepkg names (pkgname-version-arch.pkg.tar.zst): immutable
+          # per version, idempotent re-publish (--clobber), and matches
+          # build-one-package EXPECTED_PKGS.
+          echo "Generating pacman database from union set..."
+          repo-add "${REPO_DB_NAME}.db.tar.gz" "${ALL_PKGS[@]}"
+
+          # Hash manifest keyed by SOURCE package name (strip
+          # -pkgver-pkgrel-arch): build-one-package looks up REPO_HASH via
+          # awk '$1==pkg' with pkg = the source directory name.
+          echo "Generating package hash manifest..."
+          : > pkg-hashes.txt
+          for pkg in "${ALL_PKGS[@]}"; do
+            pkg_hash=$(sha256sum "$pkg" | cut -d' ' -f1)
+            pkg_base="${pkg%-*-*-*.pkg.tar.zst}"
+            echo "$pkg_base $pkg_hash" >> pkg-hashes.txt
+          done
+          sort pkg-hashes.txt -o pkg-hashes.txt
+          echo "Generated $(wc -l < pkg-hashes.txt) hash entries"
+
+          DB_FILES=("${REPO_DB_NAME}.db" "${REPO_DB_NAME}.db.tar.gz" "${REPO_DB_NAME}.files" "${REPO_DB_NAME}.files.tar.gz")
+          HASH_MANIFEST="pkg-hashes.txt"
+
+          echo "batch_packages=$(printf '%s\n' "${BATCH_PKGS[@]}" | jq -R . | jq -s -c .)" >> "$GITHUB_OUTPUT"
+          echo "db_files=$(printf '%s\n' "${DB_FILES[@]}" | jq -R . | jq -s -c .)" >> "$GITHUB_OUTPUT"
+          echo "hash_manifest=$HASH_MANIFEST" >> "$GITHUB_OUTPUT"
+
+      - name: Create or verify release exists
+        id: release
+        if: steps.prepare.outputs.has_packages == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ env.RELEASE_TAG }}"
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG exists."
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Creating release $TAG."
+            gh release create "$TAG" --repo "$REPO" \
+              --title "Arch Package Repository" \
+              --notes "Auto-built pacman repository."
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload batch packages (new builds only)
+        if: steps.prepare.outputs.has_packages == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ env.RELEASE_TAG }}"
+          cd output
+
+          retry() {
+            local attempts=$1; shift
+            local delay=10
+            local i
+            for ((i = 1; i <= attempts; i++)); do
+              if "$@"; then
+                return 0
+              fi
+              echo "Attempt $i/$attempts failed, retrying in ${delay}s..."
+              sleep "$delay"
+              delay=$((delay * 2))
+            done
+            echo "Command failed after $attempts attempts: $*" >&2
+            return 1
+          }
+
+          mapfile -t BATCH_PKGS < <(echo "${{ steps.prepare.outputs.batch_packages }}" | jq -r '.[]')
+
+          echo "Uploading ${#BATCH_PKGS[@]} batch packages..."
+          for pkg in "${BATCH_PKGS[@]}"; do
+            if [[ -f "$pkg" ]]; then
+              echo "  Uploading $pkg"
+              retry 3 gh release upload "$TAG" "$pkg" --repo "$REPO" --clobber
+            fi
+          done
+
+      - name: Upload database files (atomic switch)
+        if: steps.prepare.outputs.has_packages == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ env.RELEASE_TAG }}"
+          cd output
+
+          retry() {
+            local attempts=$1; shift
+            local delay=10
+            local i
+            for ((i = 1; i <= attempts; i++)); do
+              if "$@"; then
+                return 0
+              fi
+              echo "Attempt $i/$attempts failed, retrying in ${delay}s..."
+              sleep "$delay"
+              delay=$((delay * 2))
+            done
+            echo "Command failed after $attempts attempts: $*" >&2
+            return 1
+          }
+
+          mapfile -t DB_FILES < <(echo "${{ steps.prepare.outputs.db_files }}" | jq -r '.[]')
+          HASH_MANIFEST="${{ steps.prepare.outputs.hash_manifest }}"
+
+          echo "Verifying generated database..."
+          tar -tf "${REPO_DB_NAME}.db.tar.gz" >/dev/null 2>&1 \
+            || { echo "ERROR: ${REPO_DB_NAME}.db.tar.gz is not a valid gzip tar archive"; exit 1; }
+
+          echo "Uploading database and file snapshots (atomic switch)..."
+          for f in "${DB_FILES[@]}"; do
+            if [[ -f "$f" ]]; then
+              echo "  Uploading $f"
+              retry 3 gh release upload "$TAG" "$f" --repo "$REPO" --clobber
+            fi
+          done
+
+          # Upload hash manifest as part of atomic switch
+          if [[ -f "$HASH_MANIFEST" ]]; then
+            echo "Uploading package hash manifest (atomic switch)..."
+            retry 3 gh release upload "$TAG" "$HASH_MANIFEST" --repo "$REPO" --clobber
+          fi
+
+      - name: Generate manifest from release assets (source of truth)
+        if: steps.prepare.outputs.has_packages == 'true'
+        id: manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ env.RELEASE_TAG }}"
+          cd output
+
+          echo "Generating manifest FROM release assets (source of truth)..."
+
+          # Query release assets to get actual uploaded package list
+          gh release view "$TAG" --repo "$REPO" --json assets \
+            -q '.assets[] | select(.name | endswith(".pkg.tar.zst")) | .name' \
+            | sort > /tmp/release-pkgs.txt
+
+          if [[ ! -s /tmp/release-pkgs.txt ]]; then
+            echo "No packages found on release!"
+            exit 1
+          fi
+
+          # Generate manifest from actual release assets, mapping each asset
+          # back to its source package name and the hash we computed locally.
+          > pkg-hashes-from-release.txt
+          while IFS= read -r pkg_name; do
+            [[ -n "$pkg_name" ]] || continue
+            pkg_src="${pkg_name%-*-*-*.pkg.tar.zst}"
+            local_hash=$(awk -v p="$pkg_src" '$1==p {print $2}' pkg-hashes.txt 2>/dev/null || true)
+            if [[ -n "$local_hash" ]]; then
+              echo "$pkg_src $local_hash" >> pkg-hashes-from-release.txt
+            else
+              echo "::warning::No local hash found for $pkg_src"
+            fi
+          done < /tmp/release-pkgs.txt
+
+          sort pkg-hashes-from-release.txt -o pkg-hashes-from-release.txt
+          echo "Generated manifest from release: $(wc -l < pkg-hashes-from-release.txt) entries"
+
+          retry() {
+            local attempts=$1; shift
+            local delay=10
+            local i
+            for ((i = 1; i <= attempts; i++)); do
+              if "$@"; then
+                return 0
+              fi
+              echo "Attempt $i/$attempts failed, retrying in ${delay}s..."
+              sleep "$delay"
+              delay=$((delay * 2))
+            done
+            echo "Command failed after $attempts attempts: $*" >&2
+            return 1
+          }
+
+          echo "Uploading verified manifest from release assets..."
+          retry 3 gh release upload "$TAG" pkg-hashes-from-release.txt --repo "$REPO" --clobber
+
+      - name: Delete stale assets LAST (not in current package set)
+        if: steps.prepare.outputs.has_packages == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ env.RELEASE_TAG }}"
+          cd output
+
+          echo "Cleaning stale assets from release (assets not in current package set)..."
+
+          # All assets currently on the release
+          gh release view "$TAG" --repo "$REPO" --json assets \
+            -q '.assets[].name' > /tmp/all-assets.txt
+
+          # Current package set = the local union set (batch + carried over),
+          # i.e. exactly what the DB uploaded above references.
+          shopt -s nullglob
+          for f in *.pkg.tar.zst; do
+            echo "$f"
+          done > /tmp/current-pkgs.txt
+
+          DB_FILES=("${REPO_DB_NAME}.db" "${REPO_DB_NAME}.db.tar.gz" "${REPO_DB_NAME}.files" "${REPO_DB_NAME}.files.tar.gz")
+          HASH_MANIFESTS=("pkg-hashes.txt" "pkg-hashes-from-release.txt")
+
+          # Build keep list
+          > /tmp/keep-assets.txt
+          cat /tmp/current-pkgs.txt >> /tmp/keep-assets.txt
+          for dbf in "${DB_FILES[@]}"; do echo "$dbf" >> /tmp/keep-assets.txt; done
+          for hm in "${HASH_MANIFESTS[@]}"; do echo "$hm" >> /tmp/keep-assets.txt; done
+          sort -u /tmp/keep-assets.txt -o /tmp/keep-assets.txt
+
+          # Delete assets not in keep list
+          while IFS= read -r asset; do
+            [[ -n "$asset" ]] || continue
+            if ! grep -q -F -x "$asset" /tmp/keep-assets.txt; then
+              echo "Deleting stale asset: $asset"
+              gh release delete-asset "$TAG" "$asset" --repo "$REPO" -y || true
+            fi
+          done < /tmp/all-assets.txt
+
+          echo "Stale asset cleanup complete."
+
+      - name: Prune CI caches (keep 3 newest per prefix)
+        if: steps.prepare.outputs.has_packages == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for prefix in pacman-cache- ccache-kernel-; do
+            echo "Pruning '$prefix' caches (keeping 3 newest)..."
+            mapfile -t ids < <(gh cache list --key "$prefix" --sort created_at --order desc --json id,key -q '.[].id')
+            for i in "${!ids[@]}"; do
+              if (( i >= 3 )); then
+                echo "  Deleting cache ${ids[$i]}"
+                gh cache delete "${ids[$i]}" -y || true
+              fi
+            done
+          done
+
+      - name: Update release notes
+        if: steps.prepare.outputs.has_packages == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ env.RELEASE_TAG }}"
+
+          RELEASE_NOTES=$(cat <<EOF
+          ### 📦 Repository Update Summary
+
+          **Last Updated:** $(date -u '+%Y-%m-%d %H:%M UTC')
+          **Commit:** ${{ github.sha }}
+          **Run ID:** ${{ github.run_id }}
+
+          #### 📦 Published Packages
+          $(cd output && ls -1 *.pkg.tar.zst 2>/dev/null | sed 's/^/- /' || echo "- None")
+
+          ---
+          *Automated publish by GitHub Actions.*
+          EOF
+          )
+
+          gh release edit "$TAG" --repo "$REPO" --notes "$RELEASE_NOTES"

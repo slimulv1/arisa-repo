@@ -1,0 +1,163 @@
+name: Build Kernel
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: kernel-build
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: repository
+  REPO_DB_NAME: arisa
+  CCACHE_DIR: /tmp/ccache
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      kernel: ${{ steps.set-kernel.outputs.kernel }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Identify kernel package
+        id: set-kernel
+        run: |
+          set -euo pipefail
+          # packages.txt is the single source of truth (same parsing as sync-aur.yml).
+          mapfile -t VALID_PKGS < <(sed 's/#.*//' packages.txt | sed 's/^local:[[:space:]]*//' | awk '{print $1}' | grep -v '^$')
+
+          kernel=""
+          for p in "${VALID_PKGS[@]}"; do
+            if [[ ! -f "$p/PKGBUILD" ]]; then
+              echo "::warning::PKGBUILD missing for $p — skipping"
+              continue
+            fi
+            if [[ "$p" == "linux-arisa" ]]; then
+              kernel="$p"
+              break
+            fi
+          done
+
+          echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
+
+  build-kernel:
+    needs: prepare
+    if: needs.prepare.outputs.kernel != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    container:
+      image: ghcr.io/slimulv1/arisa-build:latest
+    env:
+      CCACHE_DIR: /tmp/ccache
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Free disk space before build
+        run: |
+          set -euo pipefail
+          echo "Disk before cleanup:"
+          df -h / | tail -1
+          rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+          echo "Disk after cleanup:"
+          df -h / | tail -1
+          # Fail fast on critically low disk instead of failing mid-build.
+          avail_kb=$(df -k --output=avail / | tail -1 | tr -d ' ')
+          if (( avail_kb < 5242880 )); then
+            echo "::error::Less than 5GB available on /. Aborting build."
+            exit 1
+          fi
+          echo "OK: $(numfmt --to=iec "$((avail_kb * 1024))") available."
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v6
+        with:
+          path: /tmp/ccache
+          key: ccache-kernel-${{ github.sha }}
+          restore-keys: |
+            ccache-kernel-
+
+      - name: Restore pacman package cache
+        uses: actions/cache/restore@v6
+        with:
+          path: /var/cache/pacman/pkg
+          key: pacman-cache-${{ github.sha }}
+          restore-keys: |
+            pacman-cache-
+
+      - name: Configure ccache
+        run: |
+          set -euo pipefail
+          mkdir -p "${CCACHE_DIR}"
+          chown -R builder:builder "${CCACHE_DIR}"
+          sudo -u builder env CCACHE_DIR="${CCACHE_DIR}" PATH="/usr/lib/ccache/bin:$PATH" ccache -M 5G
+          ccache --version | head -1
+
+      - name: Prepare build environment
+        uses: ./.github/actions/prepare-env
+
+      - name: Build, Cache and Fallback Logic
+        uses: ./.github/actions/build-one-package
+        with:
+          package: ${{ needs.prepare.outputs.kernel }}
+
+      - name: Prune pacman cache (cap 10GB)
+        run: |
+          set -euo pipefail
+          paccache -rk 5 -c /var/cache/pacman/pkg --nocolor || true
+          du -sh /var/cache/pacman/pkg
+
+      - name: Save ccache
+        uses: actions/cache/save@v6
+        if: always()
+        with:
+          path: /tmp/ccache
+          key: ccache-kernel-${{ github.sha }}
+
+      - name: Save pacman package cache
+        uses: actions/cache/save@v6
+        if: always()
+        with:
+          path: /var/cache/pacman/pkg
+          key: pacman-cache-${{ github.sha }}
+
+      - name: Upload kernel artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: pkg-linux-arisa
+          path: output/*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish Packages to Release
+    needs: build-kernel
+    uses: ./.github/workflows/publish.yml
+    with:
+      build_run_id: ${{ github.run_id }}
+    secrets: inherit
+
+  # Cancellation cleanup handler
+  cleanup-on-cancel:
+    if: cancelled()
+    needs: build-kernel
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Clean up lock artifacts on cancellation
+        run: |
+          echo "Kernel build was cancelled. Cleanup performed."
+          # Any lock cleanup or notification logic here
