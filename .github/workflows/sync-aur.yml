@@ -157,6 +157,7 @@ jobs:
           echo "- Removed: ${REMOVED[*]:-none}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create or update aggregated pull request
+        id: cpr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -178,6 +179,18 @@ jobs:
 
             ---
             *Vui lòng kiểm tra trạng thái verify build bên dưới trước khi thực hiện merge.*
+
+      - name: Enable auto-merge for the sync PR
+        if: steps.cpr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ steps.cpr.outputs.pull-request-number }}"
+          if gh pr merge "$PR_NUMBER" --repo "${{ github.repository }}" --auto --squash; then
+            echo "Auto-merge enabled for PR #$PR_NUMBER"
+          else
+            echo "::warning::Could not enable auto-merge for PR #$PR_NUMBER — merge manually"
+          fi
 
       # Cancellation cleanup handler
       - name: Cleanup on cancellation
