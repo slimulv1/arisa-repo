@@ -157,10 +157,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # GITHUB_TOKEN cannot push changes to files under .github/workflows/
+          # (GitHub blocks workflow-file updates from GitHub App tokens), so use
+          # the fine-grained PAT (ARISA_BOT_TOKEN) with workflows: write here.
+          token: ${{ secrets.ARISA_BOT_TOKEN }}
 
       - name: Pin the new image digest in consuming workflows
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.ARISA_BOT_TOKEN }}
           NEW_DIGEST: ${{ needs.build-image.outputs.digest }}
         run: |
           set -euo pipefail
