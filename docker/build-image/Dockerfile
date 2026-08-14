@@ -7,7 +7,7 @@
 #
 # Base: CachyOS v3 container (x86-64-v3 optimised makepkg profile).
 # Pinned digest 2026-08-13 (reproducible base). update-image.yml checks the
-# upstream digest on a weekly schedule and opens a bump PR when it changes.
+# upstream digest on a daily schedule and opens a bump PR when it changes.
 # Bump deliberately, e.g.:
 #   docker manifest inspect cachyos/cachyos-v3:latest
 FROM cachyos/cachyos-v3@sha256:29cbf36cfa34c440ad16b9d7d13d9bdedf1fef6d228220bcbf460f1bce34acee
@@ -21,7 +21,7 @@ COPY makepkg.conf /etc/makepkg.conf
 COPY rust.conf /etc/makepkg.conf.d/rust.conf
 
 # 1. Sync + install all tools the build job previously installed ad-hoc.
-#    Full -Syu keeps the weekly base snapshot fully upgraded (Arch forbids
+#    Full -Syu keeps the daily base snapshot fully upgraded (Arch forbids
 #    partial upgrades), then the package cache is dropped to keep the image
 #    lean. pacman preserves the modified /etc/makepkg.conf (writes a
 #    .pacnew) when it ships its own copy.
