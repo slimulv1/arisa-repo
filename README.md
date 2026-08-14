@@ -215,7 +215,7 @@ Quét `packages.txt`, với mỗi gói AUR:
 
 ### 2. Build & Publish (`build-packages.yml` — mỗi ngày 19:00 UTC, `build-kernel.yml` — mỗi ngày 02:00 UTC)
 
-Đọc danh sách từ `packages.txt`, tách `linux-arisa` (kernel) ra job riêng, build song song (matrix) trong image tùy biến `ghcr.io/slimulv1/arisa-build:latest` (base `cachyos/cachyos-v3`, preinstall sẵn toolchain, chạy x86-64-v3), sau đó publish toàn bộ lên GitHub Release tag `repository`:
+Đọc danh sách từ `packages.txt`, tách `linux-arisa` (kernel) ra job riêng, build song song (matrix) trong image tùy biến `ghcr.io/slimulv1/arisa-build` (base `cachyos/cachyos-v3`, preinstall sẵn toolchain, chạy x86-64-v3; các workflow tiêu thụ **pin theo digest bất biến**, không dùng tag `:latest`), sau đó publish toàn bộ lên GitHub Release tag `repository`:
 
 - **Hash-cache thông minh**: mỗi package được hash toàn bộ thư mục source (PKGBUILD + .SRCINFO + .install + patch) qua manifest `pkg-hashes.txt` — chỉ rebuild khi source thật sự đổi, không phụ thuộc tên file `pkgver-pkgrel`
 - 🟢 Gói mới build
@@ -227,13 +227,22 @@ Quét `packages.txt`, với mỗi gói AUR:
 
 ### 3. Build Image (`update-image.yml`)
 
-Khi sửa `docker/build-image/Dockerfile` → tự rebuild image `ghcr.io/slimulv1/arisa-build:latest` (deps + toolchain preinstall, cache bằng BuildKit GHA).
+Rebuild image `ghcr.io/slimulv1/arisa-build` (deps + toolchain preinstall, cache bằng BuildKit GHA) khi:
+
+- Sửa `docker/build-image/Dockerfile` / `makepkg.conf` / `rust.conf` (push lên `main`)
+- Lịch hàng tuần (03:00 UTC thứ 2) — Arch rolling release, base snapshot được làm mới đều đặn
+
+Quy trình an toàn:
+
+- Bản build mới được **smoke-test** (paru/makepkg hoạt động, config bake đúng, `pacman -Syu` sạch) trước khi promote thành `:latest` và **tự mở PR pin digest** vào 3 workflow tiêu thụ (build-packages / build-kernel / publish) → auto-merge
+- Base `cachyos/cachyos-v3` pin theo digest; digest mới xuất hiện upstream → **tự mở PR bump** → auto-merge → rebuild trên base mới
+- OCI labels (source/revision/created) + build `linux/amd64`
 
 ## 🔒 Security model & trade-offs
 
 - **`SigLevel = Optional DatabaseOptional`**: DB được ký GPG bằng key riêng của repo (fingerprint `BD8284BAEE6197CF2EC59839A3C506C20357176E`, public key `arisa.gpg` đính kèm release). Xác minh: tải `arisa.gpg`, `pacman-key --add arisa.gpg`, `pacman-key --lsign-key BD8284BAEE6197CF2EC59839A3C506C20357176E`; nâng `SigLevel = Required DatabaseOptional` để bắt buộc. Nếu CI không có secret GPG_PRIVATE_KEY, repo vẫn publish DB không ký (Optional không chặn) — chính sách 2 lớp: TLS HTTPS + GPG.
 - **Actions pin theo commit SHA** (kèm comment `# vX`), Dependabot weekly tự mở PR khi upstream tag dịch chuyển → runner không bao giờ chạy code bị thay đổi ngoài ý muốn. PR dependabot được **auto-merge khi có label `automerge`** (opt-in rõ ràng).
-- **Nguồn build được pin**: `makepkg.conf`/`rust.conf` từ CachyOS `docker-makepkg` @ commit cố định; base image `cachyos/cachyos-v3` pin theo digest. Image build riêng `ghcr.io/slimulv1/arisa-build:latest` do chính repo tự build (`update-image.yml`).
+- **Nguồn build được pin**: `makepkg.conf`/`rust.conf` từ CachyOS `docker-makepkg` @ commit cố định được **bake vào image lúc build** (không tải runtime mỗi job nữa); base image `cachyos/cachyos-v3` pin theo digest, tự bump hàng tuần qua PR. Các workflow tiêu thụ image `ghcr.io/slimulv1/arisa-build` **pin theo digest bất biến** — `:latest` chỉ được promote sau khi smoke-test đạt (`update-image.yml`).
 - **Auto-merge của PR `aur-sync` có guard**: chỉ auto-merge khi PR chỉ đụng tới thư mục package (hoặc `packages.txt`) — `.github/`, `docker/`, README... nằm ngoài giới hạn, bị chặn kèm comment.
 - **Token**: chỉ dùng `GITHUB_TOKEN` với permission tối thiểu (`contents`/`actions`/`issues`/`pull-requests` write), không lưu secret nào.
 

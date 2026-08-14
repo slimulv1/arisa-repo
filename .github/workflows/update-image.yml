@@ -2,19 +2,37 @@ name: Update Build Image
 
 on:
   workflow_dispatch:
+  schedule:
+    # Weekly: Monday 03:00 UTC. Arch is a rolling release — this keeps the
+    # base snapshot fresh, and bump-base-digest opens a PR when the pinned
+    # cachyos/cachyos-v3 digest moves upstream.
+    - cron: '0 3 * * 1'
   push:
     branches:
       - main
     paths:
       - 'docker/build-image/Dockerfile'
+      - 'docker/build-image/makepkg.conf'
+      - 'docker/build-image/rust.conf'
 
 permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE: ghcr.io/slimulv1/arisa-build
+
+concurrency:
+  group: update-build-image
+  cancel-in-progress: false
+
 jobs:
   build-image:
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      base_changed: ${{ steps.base.outputs.changed }}
+      base_latest: ${{ steps.base.outputs.latest }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -29,12 +47,207 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check pinned base digest vs upstream
+        id: base
+        run: |
+          set -euo pipefail
+          pinned="$(sed -n 's/^FROM cachyos\/cachyos-v3@//p' docker/build-image/Dockerfile)"
+          latest="$(docker buildx imagetools inspect cachyos/cachyos-v3:latest --format '{{.Manifest.Digest}}')"
+          echo "pinned=$pinned"
+          echo "latest=$latest"
+          if [[ -z "$pinned" || -z "$latest" ]]; then
+            echo "::warning::Could not resolve base digests (pinned='${pinned}' latest='${latest}') - skipping bump"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$pinned" != "$latest" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Compute image tags and labels
+        id: tags
+        run: |
+          set -euo pipefail
+          sha12="${GITHUB_SHA:0:12}"
+          date_tag="$(date -u +%Y-%m-%d)"
+          created="$(date -u --iso-8601=seconds)"
+          {
+            echo "tags<<TAGS_EOF"
+            printf '%s:%s\n' "$IMAGE" "$date_tag"
+            printf '%s:sha-%s\n' "$IMAGE" "$sha12"
+            echo "TAGS_EOF"
+            echo "labels<<LABELS_EOF"
+            printf 'org.opencontainers.image.source=https://github.com/%s\n' "${{ github.repository }}"
+            printf 'org.opencontainers.image.revision=%s\n' "$GITHUB_SHA"
+            printf 'org.opencontainers.image.created=%s\n' "$created"
+            echo "LABELS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./docker/build-image
           file: ./docker/build-image/Dockerfile
+          platforms: linux/amd64
           push: true
-          tags: ghcr.io/slimulv1/arisa-build:latest
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: ${{ steps.tags.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Gate before anything becomes visible: paru/makepkg respond, the baked
+  # makepkg config is the pinned one, pacman is CI-friendly, and the base
+  # snapshot upgrades cleanly (catches broken new bases before the digest
+  # pin PR is opened).
+  smoke-test:
+    needs: build-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/slimulv1/arisa-build@${{ needs.build-image.outputs.digest }}
+    steps:
+      - name: Smoke-test the freshly built image
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "== tools respond =="
+          paru --version
+          makepkg --version
+          sudo -u builder -H makepkg --version >/dev/null
+          echo "== baked makepkg config is the pinned one =="
+          grep -q '^#PKGDEST=' /etc/makepkg.conf
+          grep -q '^#LOGDEST=' /etc/makepkg.conf
+          grep -q '^#PACKAGECARCH=' /etc/makepkg.conf
+          grep -q '^RUSTFLAGS=' /etc/makepkg.conf.d/rust.conf
+          echo "== pacman CI options =="
+          [[ "$(grep -c '^DisableSandboxNetwork' /etc/pacman.conf)" == "1" ]]
+          echo "== base upgrades cleanly (weekly refresh gate) =="
+          pacman -Syu --noconfirm
+
+  # latest only ever points at a smoke-tested digest.
+  promote:
+    needs: [build-image, smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Point latest at the smoke-tested digest
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "${{ env.IMAGE }}:latest" \
+            "${{ env.IMAGE }}@${{ needs.build-image.outputs.digest }}"
+
+  # Consumers (build-packages.yml, build-kernel.yml, publish.yml) switch from
+  # the mutable :latest tag to the immutable digest of the image that just
+  # passed the smoke test. Auto-merged like the kernel bump PRs.
+  pin-digest:
+    needs: [build-image, smoke-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Pin the new image digest in consuming workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_DIGEST: ${{ needs.build-image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          files=(.github/workflows/build-packages.yml .github/workflows/build-kernel.yml .github/workflows/publish.yml)
+
+          # Already pinned to this digest everywhere?
+          already=1
+          for f in "${files[@]}"; do
+            grep -q "arisa-build@${NEW_DIGEST}" "$f" || already=0
+          done
+          if [[ "$already" == 1 ]]; then
+            echo "Workflows already pin ${NEW_DIGEST:0:19}... - nothing to do"
+            exit 0
+          fi
+          # No :latest references left (a newer pin already landed)?
+          if ! grep -q "arisa-build:latest" "${files[@]}"; then
+            echo "No :latest references left (already pinned to another digest) - nothing to do"
+            exit 0
+          fi
+
+          branch="chore/build-image-pin-${NEW_DIGEST:7:12}"
+          existing="$(gh pr list --repo "$repo" --head "$branch" --state open --json number -q '.[0].number' 2>/dev/null || true)"
+          if [[ -n "$existing" ]]; then
+            echo "PR #$existing for $branch already exists - nothing to do"
+            exit 0
+          fi
+
+          sed -i "s|ghcr.io/slimulv1/arisa-build:latest|ghcr.io/slimulv1/arisa-build@${NEW_DIGEST}|g" "${files[@]}"
+          for f in "${files[@]}"; do
+            grep -q "arisa-build@${NEW_DIGEST}" "$f" || { echo "::error::$f was not updated"; exit 1; }
+          done
+
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" checkout -b "$branch"
+          git add "${files[@]}"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "chore(ci): pin build image digest ${NEW_DIGEST:7:12}"
+          git push -u origin "$branch" >/dev/null 2>&1 || { echo "::error::could not push $branch"; exit 1; }
+          short="${NEW_DIGEST:0:19}"
+          # shellcheck disable=SC2016 # backticks are intentional (markdown code spans in the PR body)
+          printf -v body 'Pin các workflow tiêu thụ image sang digest bất biến của bản build vừa qua smoke-test.\n\n- Image: `ghcr.io/slimulv1/arisa-build:latest` → `ghcr.io/slimulv1/arisa-build@%s...` trong build-packages.yml, build-kernel.yml, publish.yml\n- Tag `:latest` chỉ được promote sau khi smoke-test đạt, nên digest pin luôn trỏ tới image đã kiểm chứng.\n\nPR này sẽ được auto-merge khi sẵn sàng.' "$short"
+          pr_url="$(gh pr create --repo "$repo" --title "chore(ci): pin build image digest ${NEW_DIGEST:7:12}" --body "$body")" || { echo "::error::gh pr create failed"; exit 1; }
+          pr_num="$(basename "$pr_url")"
+          bash "$GITHUB_WORKSPACE/.github/scripts/auto-merge-pr.sh" "$pr_num" --repo "$repo" --timeout 600
+
+  # Weekly: if upstream cachyos/cachyos-v3:latest moved, bump the pinned
+  # digest in the Dockerfile via an auto-merged PR. Merging triggers a
+  # rebuild on the new base → next run pins the new image digest.
+  bump-base-digest:
+    needs: build-image
+    if: needs.build-image.outputs.base_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Bump pinned base digest in Dockerfile
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_BASE: ${{ needs.build-image.outputs.base_latest }}
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+
+          if grep -q "^FROM cachyos/cachyos-v3@${NEW_BASE}" docker/build-image/Dockerfile; then
+            echo "Dockerfile already pins ${NEW_BASE:0:19}... - nothing to do"
+            exit 0
+          fi
+          branch="chore/build-base-${NEW_BASE:7:12}"
+          existing="$(gh pr list --repo "$repo" --head "$branch" --state open --json number -q '.[0].number' 2>/dev/null || true)"
+          if [[ -n "$existing" ]]; then
+            echo "PR #$existing for $branch already exists - nothing to do"
+            exit 0
+          fi
+
+          sed -i "s|^FROM cachyos/cachyos-v3@.*|FROM cachyos/cachyos-v3@${NEW_BASE}|" docker/build-image/Dockerfile
+          grep -q "^FROM cachyos/cachyos-v3@${NEW_BASE}" docker/build-image/Dockerfile || { echo "::error::Dockerfile was not updated"; exit 1; }
+
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" checkout -b "$branch"
+          git add docker/build-image/Dockerfile
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "chore(docker): bump base digest to ${NEW_BASE:7:12}"
+          git push -u origin "$branch" >/dev/null 2>&1 || { echo "::error::could not push $branch"; exit 1; }
+          short="${NEW_BASE:0:19}"
+          # shellcheck disable=SC2016 # backticks are intentional (markdown code spans in the PR body)
+          printf -v body 'Cập nhật base image `cachyos/cachyos-v3` sang digest mới nhất upstream (%s...).\n\nMerge sẽ trigger workflow rebuild image trên base mới (paths: docker/build-image/Dockerfile) → bản build mới được smoke-test rồi mới pin digest vào các workflow tiêu thụ.\n\nPR này sẽ được auto-merge khi sẵn sàng.' "$short"
+          pr_url="$(gh pr create --repo "$repo" --title "chore(docker): bump base digest to ${NEW_BASE:7:12}" --body "$body")" || { echo "::error::gh pr create failed"; exit 1; }
+          pr_num="$(basename "$pr_url")"
+          bash "$GITHUB_WORKSPACE/.github/scripts/auto-merge-pr.sh" "$pr_num" --repo "$repo" --timeout 600
