@@ -8,10 +8,10 @@ Kho binary Arch Linux cá nhân — build 100% tự động bằng GitHub Action
 [![pacman install](https://img.shields.io/badge/pacman-arisa-7b2ff7?style=for-the-badge&logo=archlinux&logoColor=white)](https://wiki.archlinux.org/title/Unofficial_user_repositories)
 [![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
-[![Build Packages](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-packages.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-packages.yml)
-[![Build Kernel](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-kernel.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-kernel.yml)
-[![Sync AUR](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/sync-aur.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/sync-aur.yml)
-[![Update Build Image](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/update-image.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/update-image.yml)
+[![Build packages](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-packages.yml?branch=main&label=Build%20packages&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-packages.yml)
+[![Build kernel](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-kernel.yml?branch=main&label=Build%20kernel&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-kernel.yml)
+[![Sync AUR](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/sync-aur.yml?branch=main&label=Sync%20AUR&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/sync-aur.yml)
+[![Build Docker image](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/update-image.yml?branch=main&label=Build%20Docker%20image&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/update-image.yml)
 
 [![License](https://img.shields.io/github/license/slimulv1/arisa-repo?style=flat)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/slimulv1/arisa-repo?style=flat)](https://github.com/slimulv1/arisa-repo/commits/main)
