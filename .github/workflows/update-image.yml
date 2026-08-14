@@ -176,20 +176,20 @@ jobs:
             echo "Workflows already pin ${NEW_DIGEST:0:19}... - nothing to do"
             exit 0
           fi
-          # No :latest references left (a newer pin already landed)?
-          if ! grep -q "arisa-build:latest" "${files[@]}"; then
-            echo "No :latest references left (already pinned to another digest) - nothing to do"
+          # Update whatever the consuming workflows reference (a mutable
+          # :latest tag or an older pinned digest) to the freshly verified one.
+          branch="chore/build-image-pin-${NEW_DIGEST:7:12}"
+          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
+            echo "Branch $branch already exists on origin - nothing to do"
             exit 0
           fi
-
-          branch="chore/build-image-pin-${NEW_DIGEST:7:12}"
           existing="$(gh pr list --repo "$repo" --head "$branch" --state open --json number -q '.[0].number' 2>/dev/null || true)"
           if [[ -n "$existing" ]]; then
             echo "PR #$existing for $branch already exists - nothing to do"
             exit 0
           fi
 
-          sed -i "s|ghcr.io/slimulv1/arisa-build:latest|ghcr.io/slimulv1/arisa-build@${NEW_DIGEST}|g" "${files[@]}"
+          sed -i "s|ghcr.io/slimulv1/arisa-build:latest|ghcr.io/slimulv1/arisa-build@${NEW_DIGEST}|g; s|ghcr.io/slimulv1/arisa-build@sha256:[0-9a-f]\{64\}|ghcr.io/slimulv1/arisa-build@${NEW_DIGEST}|g" "${files[@]}"
           for f in "${files[@]}"; do
             grep -q "arisa-build@${NEW_DIGEST}" "$f" || { echo "::error::$f was not updated"; exit 1; }
           done
@@ -232,6 +232,10 @@ jobs:
             exit 0
           fi
           branch="chore/build-base-${NEW_BASE:7:12}"
+          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
+            echo "Branch $branch already exists on origin (PR merged or in flight) - nothing to do"
+            exit 0
+          fi
           existing="$(gh pr list --repo "$repo" --head "$branch" --state open --json number -q '.[0].number' 2>/dev/null || true)"
           if [[ -n "$existing" ]]; then
             echo "PR #$existing for $branch already exists - nothing to do"
