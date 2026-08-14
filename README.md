@@ -244,7 +244,7 @@ Quy trình an toàn:
 - **Actions pin theo commit SHA** (kèm comment `# vX`), Dependabot weekly tự mở PR khi upstream tag dịch chuyển → runner không bao giờ chạy code bị thay đổi ngoài ý muốn. PR dependabot được **auto-merge khi có label `automerge`** (opt-in rõ ràng).
 - **Nguồn build được pin**: `makepkg.conf`/`rust.conf` từ CachyOS `docker-makepkg` @ commit cố định được **bake vào image lúc build** (không tải runtime mỗi job nữa); base image `cachyos/cachyos-v3` pin theo digest, tự bump hằng ngày qua PR. Các workflow tiêu thụ image `ghcr.io/slimulv1/arisa-build` **pin theo digest bất biến** — `:latest` chỉ được promote sau khi smoke-test đạt (`update-image.yml`).
 - **Auto-merge của PR `aur-sync` có guard**: chỉ auto-merge khi PR chỉ đụng tới thư mục package (hoặc `packages.txt`) — `.github/`, `docker/`, README... nằm ngoài giới hạn, bị chặn kèm comment.
-- **Token**: chỉ dùng `GITHUB_TOKEN` với permission tối thiểu (`contents`/`actions`/`issues`/`pull-requests` write), không lưu secret nào.
+- **Token**: hầu hết workflow dùng `GITHUB_TOKEN` với permission tối thiểu (`contents`/`actions`/`issues`/`pull-requests` write). Riêng job `pin-digest` trong `update-image.yml` (tự mở PR đổi file `.github/workflows/`) dùng **`ARISA_BOT_TOKEN`** — vì GitHub **chặn GitHub App token (GITHUB_TOKEN) đẩy file workflow** (scope `workflows` không tồn tại cho nó); `ARISA_BOT_TOKEN` là PAT (khuyến nghị fine-grained, chỉ quyền `Contents`/`Workflows`/`Pull requests` write cho đúng repo). Secrets lưu trong repo: `ARISA_BOT_TOKEN` (đẩy PR pin digest) + `GPG_PRIVATE_KEY` (ký DB repo).
 
 ## Danh sách gói
 
@@ -273,10 +273,11 @@ Quy trình an toàn:
 ## Fork cho riêng mình
 
 1. Fork repo này, sửa `packages.txt` theo ý muốn (thêm gói AUR hoặc `local:` gói tự maintain — xem [hướng dẫn ở trên](#-cách-thêm-package-thủ-công)).
-2. Đổi image build nếu cần: sửa `docker/build-image/Dockerfile` (base `cachyos/cachyos-v3` + preinstall deps) — workflow `update-image.yml` sẽ tự rebuild lên GHCR của bạn.
+2. Đổi image build nếu cần: sửa `docker/build-image/Dockerfile` (base `cachyos/cachyos-v3` + preinstall deps), `makepkg.conf`, `rust.conf` — workflow `update-image.yml` sẽ tự rebuild lên GHCR của bạn.
 3. Vào **Settings → Actions → General**: bật *Read and write permissions* + *Allow GitHub Actions to create and approve pull requests*.
 4. Vào **Settings → General → Pull Requests**: bật *Allow auto-merge* (bắt buộc để bot PR tự merge).
-5. Chạy workflow **Build and Publish Arch Repository** (workflow_dispatch) lần đầu — release `repository` sẽ tự tạo và `pkg-hashes.txt` bootstrap.
+5. Tạo **secret `ARISA_BOT_TOKEN`** (Settings → Secrets and variables → Actions): fine-grained PAT với quyền `Contents: write`, `Workflows: write`, `Pull requests: write` cho đúng repo fork của bạn — job `pin-digest` cần nó để tự mở PR pin digest (GITHUB_TOKEN bị GitHub chặn đẩy file `.github/workflows/`, xem [Security model](#-security-model--trade-offs)).
+6. Chạy workflow **Build and Publish Arch Repository** (workflow_dispatch) lần đầu — release `repository` sẽ tự tạo và `pkg-hashes.txt` bootstrap.
 
 ---
 
