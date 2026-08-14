@@ -31,6 +31,7 @@ Kho binary Arch Linux cá nhân — build 100% tự động bằng GitHub Action
 - [Bảo mật](#bảo-mật)
 - [Danh sách package](#danh-sách-package)
 - [Fork cho riêng mình](#fork-cho-riêng-mình)
+- [Nguồn gốc](#nguồn-gốc)
 
 ---
 
@@ -204,6 +205,10 @@ packages.txt
 4. **Settings → General → Pull Requests**: bật *Allow auto-merge*.
 5. Tạo secret **`ARISA_BOT_TOKEN`** (fine-grained PAT: Contents / Workflows / Pull requests write) — bắt buộc cho job pin digest.
 6. Chạy workflow **Build and Publish Arch Repository** (workflow_dispatch) lần đầu — release `repository` tự tạo kèm `pkg-hashes.txt` bootstrap.
+
+## Nguồn gốc
+
+Repo này được **fork từ** [my-arch-repo](https://github.com/nhktmdzhg/my-arch-repo) của [Nguyễn Hoàng Kỳ](https://github.com/nhktmdzhg) — ý tưởng gốc về kho binary Arch Linux xây dựng hoàn toàn trên GitHub Actions + GitHub Releases (MIT License).
 
 ---
 
