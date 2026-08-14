@@ -1,0 +1,6 @@
+# Keep the build context minimal: the Dockerfile only needs the config
+# files next to it. Nothing here is currently large, but this guards
+# against accidentally baking repo history or docs into image layers.
+.git
+*.md
+LICENSE

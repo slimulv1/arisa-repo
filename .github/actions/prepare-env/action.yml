@@ -1,52 +1,19 @@
 name: Prepare build environment
-description: Shared environment setup for every build job (makepkg v3 config,
-  pacman options + custom repo, workspace ownership). Keeps the matrix and
-  kernel jobs DRY. Assumes the repository is already checked out by the job.
+description: Shared environment setup for every build job (custom [arisa] repo
+  + fresh package database, workspace ownership). Keeps the matrix and kernel
+  jobs DRY. The makepkg v3 config is baked into the build image
+  (docker/build-image), so no runtime download happens anymore. Assumes the
+  repository is already checked out by the job.
 
 runs:
   using: composite
   steps:
-    - name: Configure makepkg for x86-64-v3 optimization
-      shell: bash
-      run: |
-        set -euo pipefail
-        fetch_file() {
-          local url="$1" dest="$2"
-          for attempt in 1 2 3 4 5; do
-            if curl -fsSL --connect-timeout 15 -o "$dest" "$url"; then
-              return 0
-            fi
-            echo "::warning::Download failed (attempt $attempt/5): $url"
-            sleep $((attempt * 5))
-          done
-          return 1
-        }
-        # Pinned 2026-08-13 to CachyOS/docker-makepkg @ 9b0259d9 (reproducible
-        # builds). Bump deliberately: gh api repos/CachyOS/docker-makepkg/commits/master
-        echo "Downloading CachyOS v3 makepkg.conf..."
-        fetch_file https://raw.githubusercontent.com/CachyOS/docker-makepkg/9b0259d98e535487de07b44d7e0e7d73b7a6be29/docker-makepkg-v3/makepkg.conf /etc/makepkg.conf
-        echo "Downloading CachyOS v3 rust.conf..."
-        mkdir -p /etc/makepkg.conf.d
-        fetch_file https://raw.githubusercontent.com/CachyOS/docker-makepkg/9b0259d98e535487de07b44d7e0e7d73b7a6be29/docker-makepkg-v3/rust.conf /etc/makepkg.conf.d/rust.conf
-        sed -i 's/^PKGDEST=/#PKGDEST=/g' /etc/makepkg.conf
-        sed -i 's/^LOGDEST=/#LOGDEST=/g' /etc/makepkg.conf
-        sed -i 's/^PACKAGECARCH=/#PACKAGECARCH=/g' /etc/makepkg.conf
-
-    - name: Configure pacman options and custom repository
+    - name: Sync package database and add custom repository
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-        tmp=$(mktemp)
-        awk '
-          BEGIN { inserted=0 }
-          /^\[options\]$/ && !inserted { print; print "DisableSandboxNetwork"; inserted=1; next }
-          { print }
-          END { if (!inserted) exit 1 }
-        ' /etc/pacman.conf > "$tmp"
-        cat "$tmp" > /etc/pacman.conf
-        rm -f "$tmp"
 
         # Retry helper: transient network/CDN failures (e.g. the Fastly SSL
         # blip seen on 2026-08-11) are retried with backoff. Expected-absence
@@ -80,7 +47,7 @@ runs:
 
         # Add the [arisa] custom repo only if the DB is actually published.
         # Absence (first run) or an unrecoverable error just skips the repo;
-        # pacman -Sy below remains the real gate for the job.
+        # pacman -Syu below remains the real gate for the job.
         if retry_cmd "check release DB" gh release view "$RELEASE_TAG" \
             --repo "${{ github.repository }}" --json assets \
             -q '.assets[].name' \
@@ -93,7 +60,7 @@ runs:
           } >> /etc/pacman.conf
         fi
 
-        retry_cmd "pacman -Sy" pacman -Sy
+        retry_cmd "pacman -Syu" pacman -Syu --noconfirm
 
     - name: Fix workspace ownership for build user
       shell: bash
