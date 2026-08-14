@@ -84,7 +84,7 @@ sudo pacman -S betterlockscreen discord-ptb
 | Việc                    | Lệnh                                          |
 | :---------------------- | :-------------------------------------------- |
 | Tìm gói trong repo      | `sudo pacman -Ss arisa` (hoặc `pacman -Sl arisa`) |
-| Cập nhật hệ thống       | `sudo pacman -Syu` (repo publish mỗi ngày ~19:00 UTC, kernel 02:00 UTC) |
+| Cập nhật hệ thống       | `sudo pacman -Syu` (repo publish mỗi ngày ~19:00 UTC = 02:00 sáng hôm sau giờ VN, kernel 02:00 UTC = 09:00 giờ VN) |
 | Gỡ gói                  | `sudo pacman -Rns <tên-gói>`                  |
 | Ngừng dùng repo         | Xóa block `[arisa]` khỏi `/etc/pacman.conf` rồi `sudo pacman -Sy` |
 
@@ -213,7 +213,7 @@ Quét `packages.txt`, với mỗi gói AUR:
 2. Nếu không có → tải **AUR snapshot** (`aur.archlinux.org/cgit/aur.git/snapshot/<pkg>.tar.gz`)
 3. Cập nhật vào repo và mở/update **PR `aur-sync`** → **auto-merge tự động**: script `.github/scripts/auto-merge-pr.sh` chờ mergeability, tự `update-branch` khi conflict, retry + verify; PR bị chặn (conflict không tự được, đụng file ngoài package dirs) → comment lý do lên PR để xử lý thủ công
 
-### 2. Build & Publish (`build-packages.yml` — mỗi ngày 19:00 UTC, `build-kernel.yml` — mỗi ngày 02:00 UTC)
+### 2. Build & Publish (`build-packages.yml` — mỗi ngày 19:00 UTC = 02:00 sáng hôm sau giờ VN, `build-kernel.yml` — mỗi ngày 02:00 UTC = 09:00 giờ VN)
 
 Đọc danh sách từ `packages.txt`, tách `linux-arisa` (kernel) ra job riêng, build song song (matrix) trong image tùy biến `ghcr.io/slimulv1/arisa-build` (base `cachyos/cachyos-v3`, preinstall sẵn toolchain, chạy x86-64-v3; các workflow tiêu thụ **pin theo digest bất biến**, không dùng tag `:latest`), sau đó publish toàn bộ lên GitHub Release tag `repository`:
 
@@ -221,7 +221,7 @@ Quét `packages.txt`, với mỗi gói AUR:
 - 🟢 Gói mới build
 - 🟡 Gói không đổi → tải thẳng từ release cũ (cache)
 - 🔴 Build lỗi → khôi phục bản cũ từ release (fallback), không bao giờ mất gói
-- **Kernel build riêng** (`linux-arisa`): job tách biệt với **ccache 5GB** — lần đầu ~3h, lần sau ~18 phút. Mỗi run, job `prepare` tự **so sánh version với upstream `linux-lqx`** (AUR rpc/v5, so sánh `sort -V`); nếu tụt hậu → job `auto-bump` **tự cập nhật PKGBUILD** từ AUR snapshot (`pkgver`, `_major`, `_lqxpatchrel`, `pkgrel`, `sha512sums`) → mở PR → **auto-merge** → chạy lại workflow build bản mới ngay trong đêm (build bản cũ trong run hiện tại được skip, tránh lãng phí). `pkgbase` giữ nguyên `linux-arisa`, build vẫn trên CachyOS x86-64-v3. Nếu không tự bump được → mở issue 🚨 kèm hướng dẫn thủ công (dedupe — không spam)
+- **Kernel build riêng** (`linux-arisa`): job tách biệt với **ccache 5GB** — lần đầu ~3h, lần sau ~18 phút. Mỗi run, job `prepare` tự **so sánh version với upstream `linux-lqx`** (AUR rpc/v5, so sánh `sort -V`); nếu tụt hậu → job `auto-bump` **tự cập nhật PKGBUILD** từ AUR snapshot (`pkgver`, `_major`, `_lqxpatchrel`, `pkgrel`, `sha512sums`) → mở PR → **auto-merge** → chạy lại workflow build bản mới ngay lập tức (build bản cũ trong run hiện tại được skip, tránh lãng phí). `pkgbase` giữ nguyên `linux-arisa`, build vẫn trên CachyOS x86-64-v3. Nếu không tự bump được → mở issue 🚨 kèm hướng dẫn thủ công (dedupe — không spam)
 - **Atomic publish**: upload packages trước, DB files (`arisa.db/.files` + `.tar.gz`) upload **cuối cùng** → không bao giờ tồn tại DB trỏ vào package thiếu
 - **Caches được chia sẻ** giữa các run (pacman package cache + ccache), tự dọn giữ 3 pacman + 2 ccache kernel mới nhất (luôn dưới trần 10GB của GitHub)
 
@@ -230,7 +230,7 @@ Quét `packages.txt`, với mỗi gói AUR:
 Rebuild image `ghcr.io/slimulv1/arisa-build` (deps + toolchain preinstall, cache bằng BuildKit GHA) khi:
 
 - Sửa `docker/build-image/Dockerfile` / `makepkg.conf` / `rust.conf` (push lên `main`)
-- Lịch hàng ngày (03:00 UTC) — Arch rolling release, base snapshot được làm mới đều đặn
+- Lịch hàng ngày (03:00 UTC = 10:00 giờ VN) — Arch rolling release, base snapshot được làm mới đều đặn
 
 Quy trình an toàn:
 
