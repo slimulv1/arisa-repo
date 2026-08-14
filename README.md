@@ -212,11 +212,7 @@ Repo này được **fork từ** [my-arch-repo](https://github.com/nhktmdzhg/my-
 
 ---
 
-*Built with 🖤 by Arisa.*
-
----
-
-## Made with ❤️ for Linux users. May the stars of Gensokyo guide your coding journey! 🌟
+## Built with 🖤 by Arisa. May the stars of Gensokyo guide your coding journey! 🌟
 
 <p align="center">
 	<img src="https://raw.githubusercontent.com/catppuccin/catppuccin/main/assets/footers/gray0_ctp_on_line.svg?sanitize=true" />
