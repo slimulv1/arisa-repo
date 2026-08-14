@@ -1,21 +1,18 @@
-# 📦 Arisa Repository
+# Arisa Repository
 
-Kho binary của **Arisa** — repo Arch Linux cá nhân, build tự động 100% bằng GitHub Actions + GitHub Releases (zero-cost, không cần VPS). Đặt theo tên của Arisa, trợ lý ảo trên máy của anh. 🖤
+Kho binary Arch Linux cá nhân — build 100% tự động bằng GitHub Actions + GitHub Releases (zero-cost, không cần VPS).
 
 <div align="center">
 
-<!-- Hàng 1 — HERO (for-the-badge): identity -->
 [![Arch Linux](https://img.shields.io/badge/Arch_Linux-1793D1?style=for-the-badge&logo=archlinux&logoColor=white)](https://archlinux.org)
 [![pacman install](https://img.shields.io/badge/pacman-arisa-7b2ff7?style=for-the-badge&logo=archlinux&logoColor=white)](https://wiki.archlinux.org/title/Unofficial_user_repositories)
 [![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
-<!-- Hàng 2 — CI STATUS (flat-square): 3 workflow -->
 [![Build Packages](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-packages.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-packages.yml)
 [![Build Kernel](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-kernel.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-kernel.yml)
 [![Sync AUR](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/sync-aur.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/sync-aur.yml)
 [![Update Build Image](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/update-image.yml?branch=main&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/update-image.yml)
 
-<!-- Hàng 3 — REPO STATS (flat): chỉ những gì có ý nghĩa -->
 [![License](https://img.shields.io/github/license/slimulv1/arisa-repo?style=flat)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/slimulv1/arisa-repo?style=flat)](https://github.com/slimulv1/arisa-repo/commits/main)
 [![Commit activity](https://img.shields.io/github/commit-activity/m/slimulv1/arisa-repo?style=flat)](https://github.com/slimulv1/arisa-repo/commits/main)
@@ -23,33 +20,29 @@ Kho binary của **Arisa** — repo Arch Linux cá nhân, build tự động 100
 
 </div>
 
-## Ý tưởng
+## Nội dung
 
-Mọi thứ điều khiển bởi `packages.txt` (single source of truth):
-
-- Dòng thường → gói AUR (đồng bộ tự động từ **CachyOS-PKGBUILDS** trước, fallback **AUR**)
-- `local: tên-gói` → PKGBUILD tự maintain trong repo này (không sync, không ghi đè)
-
-Toàn bộ luồng **sync → PR → auto-merge → build → publish** đều tự động: bạn chỉ cần sửa `packages.txt` (hoặc thêm thư mục PKGBUILD), phần còn lại CI lo. Xem [Cách thêm package thủ công](#-cách-thêm-package-thủ-công).
+- [Cài đặt](#cài-đặt)
+- [Sử dụng hàng ngày](#sử-dụng-hàng-ngày)
+- [Xác minh chữ ký GPG](#xác-minh-chữ-ký-gpg)
+- [Nguyên lý hoạt động](#nguyên-lý-hoạt-động)
+- [Thêm package](#thêm-package)
+- [Kiến trúc CI/CD](#kiến-trúc-cicd)
+- [Bảo mật](#bảo-mật)
+- [Danh sách package](#danh-sách-package)
+- [Fork cho riêng mình](#fork-cho-riêng-mình)
 
 ---
 
-## 🚀 Cách cài đặt (bên máy dùng)
+## Cài đặt
 
-### Yêu cầu
-
-- Hệ điều hành dùng pacman: **Arch Linux** (hoặc CachyOS, EndeavourOS...)
-- CPU hỗ trợ **x86-64-v3+** (Intel Haswell / AMD Excavator trở lên) — nhị phân build tối ưu theo `cachyos/cachyos-v3`
+**Yêu cầu:** Arch / CachyOS / EndeavourOS, CPU hỗ trợ **x86-64-v3** (Intel Haswell trở lên, AMD Excavator trở lên). Kiểm tra:
 
 ```bash
-# Kiểm tra nhanh CPU của bạn
 grep -o 'x86-64-v[0-9]' /proc/cpuinfo | sort -u
-# Phải hiển thị "x86-64-v3" (hoặc v4)
 ```
 
-### Bước 1 — Thêm repo vào pacman
-
-Mở `/etc/pacman.conf` và thêm **vào cuối file**:
+**Bước 1 — Thêm repository** vào cuối `/etc/pacman.conf`:
 
 ```ini
 [arisa]
@@ -57,227 +50,160 @@ SigLevel = Optional DatabaseOptional
 Server = https://github.com/slimulv1/arisa-repo/releases/download/repository
 ```
 
-> 💡 Có thể chạy nhanh bằng lệnh:
-> ```bash
-> sudo tee -a /etc/pacman.conf <<'EOF'
->
-> [arisa]
-> SigLevel = Optional DatabaseOptional
-> Server = https://github.com/slimulv1/arisa-repo/releases/download/repository
-> EOF
-> ```
+Hoặc dùng lệnh:
 
-### Bước 2 — Đồng bộ + cài đặt
+```bash
+sudo tee -a /etc/pacman.conf <<'EOF'
+
+[arisa]
+SigLevel = Optional DatabaseOptional
+Server = https://github.com/slimulv1/arisa-repo/releases/download/repository
+EOF
+```
+
+**Bước 2 — Đồng bộ và cài:**
 
 ```bash
 sudo pacman -Sy
-
-# Cài cả đội hình Arisa (meta-package)
-sudo pacman -S arisa-meta
-
-# Hoặc cài từng gói riêng
-sudo pacman -S betterlockscreen discord-ptb
+sudo pacman -S arisa-meta        # toàn bộ đội hình
+sudo pacman -S <tên-gói>         # hoặc gói riêng lẻ
 ```
 
-### Sử dụng hằng ngày
+## Sử dụng hàng ngày
 
-| Việc                    | Lệnh                                          |
-| :---------------------- | :-------------------------------------------- |
-| Tìm gói trong repo      | `sudo pacman -Ss arisa` (hoặc `pacman -Sl arisa`) |
-| Cập nhật hệ thống       | `sudo pacman -Syu` (repo publish mỗi ngày ~19:00 UTC = 02:00 sáng hôm sau giờ VN, kernel 02:00 UTC = 09:00 giờ VN) |
-| Gỡ gói                  | `sudo pacman -Rns <tên-gói>`                  |
-| Ngừng dùng repo         | Xóa block `[arisa]` khỏi `/etc/pacman.conf` rồi `sudo pacman -Sy` |
+| Việc                    | Lệnh                          | Ghi chú                                        |
+| ----------------------- | ----------------------------- | ---------------------------------------------- |
+| Tìm gói                 | `pacman -Ss arisa` / `pacman -Sl arisa` |                                        |
+| Cập nhật                | `pacman -Syu`                 | Kho publish ~19:00 UTC = 02:00 sáng hôm sau giờ VN; kernel 02:00 UTC = 09:00 giờ VN |
+| Gỡ cài                  | `pacman -Rns <tên-gói>`       |                                                |
+| Ngừng dùng              | Xóa block `[arisa]`, rồi `pacman -Sy` |                                        |
 
-### Xác minh chữ ký GPG (khuyến khích)
+## Xác minh chữ ký GPG
 
-DB repo được ký GPG bằng key riêng (fingerprint `BD8284BAEE6197CF2EC59839A3C506C20357176E`, public key `arisa.gpg` đính kèm mỗi release):
+DB kho được ký bằng key riêng (xem [Bảo mật](#bảo-mật)). Xác minh một lần:
 
 ```bash
-curl -fLO https://github.com/slimulv1/arisa-repo/releases/download/repository/arisa.gpg
+curl -LO https://github.com/slimulv1/arisa-repo/releases/download/repository/arisa.gpg
 sudo pacman-key --add arisa.gpg
 sudo pacman-key --lsign-key BD8284BAEE6197CF2EC59839A3C506C20357176E
 ```
 
-Nâng cấp chặt hơn bằng cách đổi trong `/etc/pacman.conf`:
+Muốn bắt buộc kiểm tra chữ ký, đổi `SigLevel = Required DatabaseOptional` trong block `[arisa]`.
 
-```ini
-SigLevel = Required DatabaseOptional
-```
+## Nguyên lý hoạt động
 
-Chi tiết model bảo mật: xem [🔒 Security model](#-security-model--trade-offs).
+Mọi thứ điều khiển bởi một file duy nhất — **`packages.txt`** (single source of truth):
 
----
+| Dòng trong `packages.txt` | Ý nghĩa                          | Nguồn                              |
+| -------------------------- | -------------------------------- | ---------------------------------- |
+| `tên-gói`                  | Gói AUR (mirror)                 | CachyOS-PKGBUILDS → fallback AUR    |
+| `local: tên-gói`           | PKGBUILD tự maintain (không sync) | Thư mục tương ứng trong repo       |
 
-## ➕ Cách thêm package thủ công
+Chuỗi vận hành **hoàn toàn tự động**: sửa `packages.txt` → sync → PR → auto-merge → build → publish lên GitHub Release (`tag: repository`).
 
-Repo có sẵn **2 loại package** — cách thêm mỗi loại hoàn toàn khác nhau.
+## Thêm package
 
-### Cách 1 — Thêm gói AUR (chỉ 1 dòng, hoàn toàn tự động)
-
-Áp dụng cho gói đã tồn tại trên AUR (hoặc CachyOS-PKGBUILDS). Bạn chỉ cần khai tên gói:
+### Cách 1 — Gói AUR (không cần viết PKGBUILD)
 
 ```bash
 echo "my-new-aur-pkg" >> packages.txt
-git add packages.txt
-git commit -m "feat: add my-new-aur-pkg"
-git push
+git add packages.txt && git commit -m "add: my-new-aur-pkg" && git push
 ```
 
-Sau đó CI tự chạy toàn bộ:
+CI tự xử lý phần còn lại: `sync-aur.yml` (mỗi giờ) tìm nguồn → PR `aur-sync` → auto-merge → build → publish. Package có thể cài sau **30–60 phút**.
 
-1. **`sync-aur.yml`** (chạy mỗi giờ `:07`, hoặc ngay khi push `packages.txt`) tìm PKGBUILD trong **CachyOS-PKGBUILDS** trước, fallback **AUR snapshot**, copy vào thư mục `<gói>/`
-2. Tạo **PR `aur-sync`** chứa các file mới → **auto-merge** tự merge khi PR không conflict (có guard: chỉ merge nếu PR chỉ đụng thư mục package)
-3. **`build-packages.yml`** build (kích hoạt ngay bởi push lên main) → publish lên GitHub Release tag `repository`
-4. Khoảng 30–60 phút sau: `sudo pacman -Sy && sudo pacman -S my-new-aur-pkg` 🎉
+Lưu ý:
 
-**Lưu ý khi chọn tên:**
+- Tên phải khớp chính xác `pkgbase` trên AUR (phân biệt hoa thường, giữ hậu tố `-git`/`-bin`).
+- Không tìm thấy nguồn → PR body báo 🔴 **Failed**.
+- Xóa gói: bỏ dòng trong `packages.txt` → CI tự dọn.
 
-- ⚠️ Tên phải **khớp chính xác pkgbase trên AUR** (phân biệt hoa thường, giữ nguyên hậu tố `-git`, `-bin`...): `fcitx5-lotus-git` ≠ `fcitx5-lotus-bin`
-- Nếu AUR/CachyOS không có gói đó → `sync-aur` báo trong cột **🔴 Failed** của PR body, gói không được thêm → kiểm tra lại tên
-- Thư mục gói = tên trong `packages.txt`, **không chứa version**
-
-**Xóa gói AUR:** bỏ dòng đó khỏi `packages.txt` → sync giờ sẽ **prune** thư mục cũ → PR dọn dẹp → auto-merge → gói biến mất khỏi release run tiếp theo.
-
----
-
-### Cách 2 — Thêm gói tự maintain (`local:`)
-
-Áp dụng cho gói **không có trên AUR** (hoặc bạn muốn fix/sửa riêng, đóng băng version, patch cục bộ...).
-
-**Bước 1 — Tạo thư mục gói với PKGBUILD:**
+### Cách 2 — Package local (tự maintain PKGBUILD)
 
 ```bash
-mkdir my-tool
-```
-
-Tạo `my-tool/PKGBUILD` (skeleton tham khảo):
-
-```bash
-pkgname=my-tool
-pkgver=1.0.0
-pkgrel=1
-pkgdesc="Mô tả ngắn gọn"
-arch=('x86_64')
-url="https://github.com/you/my-tool"
-license=('MIT')
-depends=('curl')
-makedepends=('cmake' 'ninja')
-source=("$url/archive/v$pkgver.tar.gz")
-sha256sums=('SKIP')   # THAY bằng hash thật sau khi tải lần đầu
-
-build() {
-  cmake -B build -G Ninja
-  cmake --build build
-}
-
-package() {
-  install -Dm755 build/my-tool "$pkgdir/usr/bin/my-tool"
-}
-```
-
-Sinh `.SRCINFO` cho chuẩn (khuyến khích):
-
-```bash
-cd my-tool
+mkdir -p my-tool && cd my-tool
+# viết PKGBUILD (tham khảo các gói local hiện có làm mẫu)
 makepkg --printsrcinfo > .SRCINFO
+echo "local: my-tool" >> ../packages.txt
 ```
 
-**Bước 2 — Khai báo local + push:**
+Quy tắc vàng:
 
-```bash
-echo "local: my-tool" >> packages.txt
-git add my-tool packages.txt
-git commit -m "feat: add self-maintained my-tool"
-git push
-```
-
-`build-packages.yml` chạy **ngay** (push chạm thư mục package) → build → publish. Nếu build lỗi, CI tự **fallback giữ gói cũ** trên release — không bao giờ mất gói đang chạy.
-
-**Quy tắc vàng cho gói local:**
-
-- Tên thư mục = dòng trong `packages.txt`, **không version** (version nằm trong PKGBUILD)
-- PKGBUILD phải build được trong container **CachyOS x86-64-v3** (`makepkg.conf` của CachyOS) — test bằng `makepkg` trên máy CachyOS là chuẩn nhất
-- Gói cần `makedepends` lạ chưa có trong build image → thêm vào `docker/build-image/Dockerfile` (workflow `update-image.yml` tự rebuild image mới)
-- Kernel `linux-arisa` là case đặc biệt: build riêng qua `build-kernel.yml` (ccache, tự so sánh + **tự bump version** upstream linux-lqx qua PR auto-merge) — chỉ đụng tới nếu bạn hiểu kernel packaging
-- Sau khi sửa PKGBUILD nhớ `makepkg --printsrcinfo > .SRCINFO` (giữ hash-cache ổn định)
-
----
+- Tên thư mục = dòng trong `packages.txt`, **không kèm version**.
+- Build được trong container CachyOS x86-64-v3 (nghi ngờ → test bằng `makepkg` cục bộ).
+- Makedepends lạ → thêm vào `docker/build-image/Dockerfile` (`update-image.yml` tự rebuild image).
+- Sửa PKGBUILD nhớ in lại `.SRCINFO` — giữ hash-cache ổn định.
+- Kernel `linux-arisa` là case đặc biệt: build riêng ở `build-kernel.yml`, dùng ccache, tự bump version `linux-lqx` qua PR.
 
 ## Kiến trúc CI/CD
 
-### 1. Sync AUR (`sync-aur.yml` — chạy mỗi giờ)
+```
+packages.txt
+    │
+    ├─ sync-aur.yml (mỗi giờ :07)     → PR aur-sync → auto-merge
+    │
+    ├─ build-packages.yml (19:00 UTC) → matrix build AUR + local → publish
+    │
+    ├─ build-kernel.yml  (02:00 UTC)  → linux-arisa (ccache, auto-bump) → publish
+    │
+    └─ update-image.yml  (03:00 UTC)  → rebuild image build → smoke-test → promote → pin digest
+```
 
-Quét `packages.txt`, với mỗi gói AUR:
+**`build-packages.yml` / `build-kernel.yml`**
 
-1. **CachyOS-PKGBUILDS** (clone sparse `--depth=1 --filter=blob:none` để chỉ lấy metadata) — nếu tìm thấy PKGBUILD thì dùng luôn (tối ưu hơn AUR gốc)
-2. Nếu không có → tải **AUR snapshot** (`aur.archlinux.org/cgit/aur.git/snapshot/<pkg>.tar.gz`)
-3. Cập nhật vào repo và mở/update **PR `aur-sync`** → **auto-merge tự động**: script `.github/scripts/auto-merge-pr.sh` chờ mergeability, tự `update-branch` khi conflict, retry + verify; PR bị chặn (conflict không tự được, đụng file ngoài package dirs) → comment lý do lên PR để xử lý thủ công
+- Chạy trong image `ghcr.io/slimulv1/arisa-build` — preinstall toàn bộ toolchain, tối ưu **x86-64-v3**; workflow **pin theo digest bất biến** (không dùng `:latest`).
+- **Hash-cache**: hash toàn bộ thư mục source (PKGBUILD + `.SRCINFO` + `.install` + patch) → manifest `pkg-hashes.txt`; source không đổi thì tải binary cũ từ release, không rebuild lại.
+  - 🟢 source đổi → build mới
+  - 🟡 source giữ nguyên → tải từ release (cache)
+  - 🔴 build lỗi → fallback giữ bản cũ trong repo
+- **Kernel**: ccache 5 GB (lần đầu ~3 h, các lần sau ~18 phút); tự so sánh version upstream `linux-lqx`, bump PKGBUILD → PR → auto-merge → rebuild; không bump được → mở issue 🚨.
+- **Publish atomic**: upload packages trước, upload DB (`arisa.db`/`.files` + `.tar.gz`) **cuối cùng**; cache được dọn giữ 3 pacman + 2 kernel mới nhất (< 10 GB).
 
-### 2. Build & Publish (`build-packages.yml` — mỗi ngày 19:00 UTC = 02:00 sáng hôm sau giờ VN, `build-kernel.yml` — mỗi ngày 02:00 UTC = 09:00 giờ VN)
+**`update-image.yml`**
 
-Đọc danh sách từ `packages.txt`, tách `linux-arisa` (kernel) ra job riêng, build song song (matrix) trong image tùy biến `ghcr.io/slimulv1/arisa-build` (base `cachyos/cachyos-v3`, preinstall sẵn toolchain, chạy x86-64-v3; các workflow tiêu thụ **pin theo digest bất biến**, không dùng tag `:latest`), sau đó publish toàn bộ lên GitHub Release tag `repository`:
+- Rebuild image khi sửa `Dockerfile` / `makepkg.conf` / `rust.conf` (push main) + lịch hàng ngày.
+- Bản build mới phải qua **smoke-test** (paru/makepkg hoạt động, config bake đúng, `pacman -Syu` sạch) trước khi promote thành `:latest`.
+- Tự mở PR pin digest mới vào 3 workflow tiêu thụ → auto-merge.
+- Base `cachyos/cachyos-v3` pin theo digest; digest mới xuất hiện upstream → tự mở PR bump → rebuild trên base mới.
 
-- **Hash-cache thông minh**: mỗi package được hash toàn bộ thư mục source (PKGBUILD + .SRCINFO + .install + patch) qua manifest `pkg-hashes.txt` — chỉ rebuild khi source thật sự đổi, không phụ thuộc tên file `pkgver-pkgrel`
-- 🟢 Gói mới build
-- 🟡 Gói không đổi → tải thẳng từ release cũ (cache)
-- 🔴 Build lỗi → khôi phục bản cũ từ release (fallback), không bao giờ mất gói
-- **Kernel build riêng** (`linux-arisa`): job tách biệt với **ccache 5GB** — lần đầu ~3h, lần sau ~18 phút. Mỗi run, job `prepare` tự **so sánh version với upstream `linux-lqx`** (AUR rpc/v5, so sánh `sort -V`); nếu tụt hậu → job `auto-bump` **tự cập nhật PKGBUILD** từ AUR snapshot (`pkgver`, `_major`, `_lqxpatchrel`, `pkgrel`, `sha512sums`) → mở PR → **auto-merge** → chạy lại workflow build bản mới ngay lập tức (build bản cũ trong run hiện tại được skip, tránh lãng phí). `pkgbase` giữ nguyên `linux-arisa`, build vẫn trên CachyOS x86-64-v3. Nếu không tự bump được → mở issue 🚨 kèm hướng dẫn thủ công (dedupe — không spam)
-- **Atomic publish**: upload packages trước, DB files (`arisa.db/.files` + `.tar.gz`) upload **cuối cùng** → không bao giờ tồn tại DB trỏ vào package thiếu
-- **Caches được chia sẻ** giữa các run (pacman package cache + ccache), tự dọn giữ 3 pacman + 2 ccache kernel mới nhất (luôn dưới trần 10GB của GitHub)
+## Bảo mật
 
-### 3. Build Image (`update-image.yml`)
+- **Chữ ký GPG**: `SigLevel = Optional DatabaseOptional` — DB ký bằng key riêng (fingerprint `BD8284BAEE6197CF2EC59839A3C506C20357176E`, public key `arisa.gpg` đính kèm release). Không có secret `GPG_PRIVATE_KEY` → DB publish không ký (không chặn cài). Chính sách 2 lớp: TLS HTTPS + GPG.
+- **Actions pin theo commit SHA** (kèm comment `# vX`); Dependabot tự mở PR khi upstream tag dịch chuyển — runner không bao giờ chạy code bị đổi ngoài ý muốn.
+- **Nguồn build được pin**: `makepkg.conf`/`rust.conf` từ CachyOS `docker-makepkg` @ commit cố định, **bake vào image lúc build** (không tải runtime mỗi job); image tiêu thụ **pin theo digest bất biến** — `:latest` chỉ được promote sau khi smoke-test đạt.
+- **Auto-merge có guard**: PR `aur-sync` chỉ được tự merge khi chỉ đụng thư mục package (hoặc `packages.txt`) — `.github/`, `docker/`, README... nằm ngoài phạm vi.
+- **Token**: workflow dùng `GITHUB_TOKEN` với permission tối thiểu; riêng job `pin-digest` (đẩy file `.github/workflows/`) dùng **`ARISA_BOT_TOKEN`** (PAT fine-grained: Contents / Workflows / Pull requests write — GITHUB_TOKEN không thể đẩy file workflow). Secrets repo: `ARISA_BOT_TOKEN`, `GPG_PRIVATE_KEY`.
 
-Rebuild image `ghcr.io/slimulv1/arisa-build` (deps + toolchain preinstall, cache bằng BuildKit GHA) khi:
+## Danh sách package
 
-- Sửa `docker/build-image/Dockerfile` / `makepkg.conf` / `rust.conf` (push lên `main`)
-- Lịch hàng ngày (03:00 UTC = 10:00 giờ VN) — Arch rolling release, base snapshot được làm mới đều đặn
+**Local — tự maintain (11):**
 
-Quy trình an toàn:
+| Package               | Mô tả                                                        |
+| --------------------- | ------------------------------------------------------------ |
+| `linux-arisa`         | Kernel Liquorix (giữ 100% patch/config upstream `linux-lqx`, PDS scheduler, ZEN patches, localversion `-arisa`; gói `-headers`/`-docs`) |
+| `arisa-meta`          | Meta-package: cài toàn bộ đội hình                          |
+| `ttf-ms-win11-base`   | Font Windows 11 (Segoe UI, Consolas, Cascadia)               |
+| `ventoy`              | USB multi-boot (packaging grub/edk2/ipxe, vendor patch)      |
+| `zalo-for-linux-bin`  | Zalo client (Unofficial AppImage + ZaDark)                   |
+| `lianli-linux-git`    | Fan/LED Lian Li Host Controller (udev rule, fix gtk3/webkit/npm/setuptools) |
+| `anifetch-cli`        | CLI fetch anime-inspired                                     |
+| `ttf-vietnamese-tcvn3`| Font tiếng Việt TCVN 6909 (`Vn*.ttf`, đóng băng)             |
+| `ttf-vietnamese-vni`  | Font tiếng Việt VNI (`VNI-*.ttf`, đóng băng)                 |
+| `catppuccin-fcitx5-git` | Theme Catppuccin cho fcitx5 (`*rounded`, đóng băng)        |
+| `qpwgraph`            | Nối/điều phối luồng audio PipeWire (đóng băng)               |
 
-- Bản build mới được **smoke-test** (paru/makepkg hoạt động, config bake đúng, `pacman -Syu` sạch) trước khi promote thành `:latest` và **tự mở PR pin digest** vào 3 workflow tiêu thụ (build-packages / build-kernel / publish) → auto-merge
-- Base `cachyos/cachyos-v3` pin theo digest; digest mới xuất hiện upstream → **tự mở PR bump** → auto-merge → rebuild trên base mới
-- OCI labels (source/revision/created) + build `linux/amd64`
+**AUR — mirror tự động (20):**
 
-## 🔒 Security model & trade-offs
-
-- **`SigLevel = Optional DatabaseOptional`**: DB được ký GPG bằng key riêng của repo (fingerprint `BD8284BAEE6197CF2EC59839A3C506C20357176E`, public key `arisa.gpg` đính kèm release). Xác minh: tải `arisa.gpg`, `pacman-key --add arisa.gpg`, `pacman-key --lsign-key BD8284BAEE6197CF2EC59839A3C506C20357176E`; nâng `SigLevel = Required DatabaseOptional` để bắt buộc. Nếu CI không có secret GPG_PRIVATE_KEY, repo vẫn publish DB không ký (Optional không chặn) — chính sách 2 lớp: TLS HTTPS + GPG.
-- **Actions pin theo commit SHA** (kèm comment `# vX`), Dependabot weekly tự mở PR khi upstream tag dịch chuyển → runner không bao giờ chạy code bị thay đổi ngoài ý muốn. PR dependabot được **auto-merge khi có label `automerge`** (opt-in rõ ràng).
-- **Nguồn build được pin**: `makepkg.conf`/`rust.conf` từ CachyOS `docker-makepkg` @ commit cố định được **bake vào image lúc build** (không tải runtime mỗi job nữa); base image `cachyos/cachyos-v3` pin theo digest, tự bump hằng ngày qua PR. Các workflow tiêu thụ image `ghcr.io/slimulv1/arisa-build` **pin theo digest bất biến** — `:latest` chỉ được promote sau khi smoke-test đạt (`update-image.yml`).
-- **Auto-merge của PR `aur-sync` có guard**: chỉ auto-merge khi PR chỉ đụng tới thư mục package (hoặc `packages.txt`) — `.github/`, `docker/`, README... nằm ngoài giới hạn, bị chặn kèm comment.
-- **Token**: hầu hết workflow dùng `GITHUB_TOKEN` với permission tối thiểu (`contents`/`actions`/`issues`/`pull-requests` write). Riêng job `pin-digest` trong `update-image.yml` (tự mở PR đổi file `.github/workflows/`) dùng **`ARISA_BOT_TOKEN`** — vì GitHub **chặn GitHub App token (GITHUB_TOKEN) đẩy file workflow** (scope `workflows` không tồn tại cho nó); `ARISA_BOT_TOKEN` là PAT (khuyến nghị fine-grained, chỉ quyền `Contents`/`Workflows`/`Pull requests` write cho đúng repo). Secrets lưu trong repo: `ARISA_BOT_TOKEN` (đẩy PR pin digest) + `GPG_PRIVATE_KEY` (ký DB repo).
-
-## Danh sách gói
-
-### Gói tự maintain (`local:`)
-
-| Gói | Mô tả |
-| :-- | :-- |
-| `linux-arisa` | Kernel Liquorix đổi tên — **giữ nguyên 100% patch/config/cách build** của upstream `linux-lqx` (PDS scheduler, ZEN patches), chỉ đổi tên package + localversion thành `-arisa`. Chia gói: `linux-arisa`, `linux-arisa-headers`, `linux-arisa-docs`. CI **tự bump PKGBUILD + auto-merge** khi Linux-Liquorix ra bản mới (chỉ mở issue 🚨 khi không tự bump được) |
-| `arisa-meta` | Meta-package: cài toàn bộ đội hình AUR của Arisa trong một lệnh |
-| `ttf-ms-win11-base` | Font Windows 11 base (Segoe UI, Consolas, Cascadia...) — giữ local để cài trực tiếp |
-| `ventoy` | Ventoy — tạo USB multi-boot. Packaging phức tạp (build nhiều thành phần từ source cũ: grub, edk2, ipxe...), vendor patch cục bộ nên tự maintain |
-| `zalo-for-linux-bin` | Zalo client cho Linux (Unofficial, AppImage + ZaDark) — AUR source hardcode commit cũ gây 404, fix `_commithash` cục bộ nên giữ local |
-| `lianli-linux-git` | Điều khiển fan/LED Lian Li (Host Controller) — cần udev rule `60-lianli.rules`, fix gtk3/webkit/npm/setuptools, pkgrel cục bộ |
-| `anifetch-cli` | CLI fetch tool lấy cảm hứng từ anime — cần `python-setuptools` trong makedepends |
-| `ttf-vietnamese-tcvn3` | Font tiếng Việt chuẩn TCVN 6909 (bộ `Vn*.ttf`) — nội dung đóng băng, chuyển local để không bị sync đè |
-| `ttf-vietnamese-vni` | Font tiếng Việt chuẩn VNI (bộ `VNI-*.ttf`) — nội dung đóng băng, chuyển local để không bị sync đè |
-| `catppuccin-fcitx5-git` | Theme Catppuccin cho fcitx5 (`*rounded` themes) — nội dung đóng băng, chuyển local để không bị sync đè |
-| `qpwgraph` | Công cụ nối/điều phối luồng audio PipeWire/PulseAudio (dạng đồ thị) — đóng băng bản build ổn định để không bị sync đè |
-
-### Gói AUR được mirror (đồng bộ tự động)
-
-`amethyst-mod-manager`, `betterlockscreen`, `bibata-cursor-theme`, `brave-origin-bin`, `code-marketplace`, `cozette-otb`, `discord-ptb`, `evdi-dkms`, `fcitx5-lotus-git`, `hw-probe`, `libdockapp`, `light`, `localsend`, `openrgb-git`, `python-libloot`, `python-pynput`, `python-pywal16`, `python-pywalfox`, `spoofdpi`, `visual-studio-code-bin`.
-
-> Muốn thêm gói mới? Xem [Cách thêm package thủ công](#-cách-thêm-package-thủ-công) — gói AUR chỉ tốn 1 dòng trong `packages.txt`.
+`amethyst-mod-manager`, `betterlockscreen`, `bibata-cursor-theme`, `brave-origin-bin`, `code-marketplace`, `cozette-otb`, `discord-ptb`, `evdi-dkms`, `fcitx5-lotus-git`, `hw-probe`, `libdockapp`, `light`, `localsend`, `openrgb-git`, `python-libloot`, `python-pynput`, `python-pywal16`, `python-pywalfox`, `spoofdpi`, `visual-studio-code-bin`
 
 ## Fork cho riêng mình
 
-1. Fork repo này, sửa `packages.txt` theo ý muốn (thêm gói AUR hoặc `local:` gói tự maintain — xem [hướng dẫn ở trên](#-cách-thêm-package-thủ-công)).
-2. Đổi image build nếu cần: sửa `docker/build-image/Dockerfile` (base `cachyos/cachyos-v3` + preinstall deps), `makepkg.conf`, `rust.conf` — workflow `update-image.yml` sẽ tự rebuild lên GHCR của bạn.
-3. Vào **Settings → Actions → General**: bật *Read and write permissions* + *Allow GitHub Actions to create and approve pull requests*.
-4. Vào **Settings → General → Pull Requests**: bật *Allow auto-merge* (bắt buộc để bot PR tự merge).
-5. Tạo **secret `ARISA_BOT_TOKEN`** (Settings → Secrets and variables → Actions): fine-grained PAT với quyền `Contents: write`, `Workflows: write`, `Pull requests: write` cho đúng repo fork của bạn — job `pin-digest` cần nó để tự mở PR pin digest (GITHUB_TOKEN bị GitHub chặn đẩy file `.github/workflows/`, xem [Security model](#-security-model--trade-offs)).
-6. Chạy workflow **Build and Publish Arch Repository** (workflow_dispatch) lần đầu — release `repository` sẽ tự tạo và `pkg-hashes.txt` bootstrap.
+1. **Fork repo**, sửa `packages.txt` theo ý muốn.
+2. (Tùy chọn) Tùy biến image build: `docker/build-image/Dockerfile`, `makepkg.conf`, `rust.conf` — `update-image.yml` tự rebuild lên GHCR của bạn.
+3. **Settings → Actions → General**: bật *Read and write permissions* + *Allow GitHub Actions to create and approve pull requests*.
+4. **Settings → General → Pull Requests**: bật *Allow auto-merge*.
+5. Tạo secret **`ARISA_BOT_TOKEN`** (fine-grained PAT: Contents / Workflows / Pull requests write) — bắt buộc cho job pin digest.
+6. Chạy workflow **Build and Publish Arch Repository** (workflow_dispatch) lần đầu — release `repository` tự tạo kèm `pkg-hashes.txt` bootstrap.
 
 ---
 
