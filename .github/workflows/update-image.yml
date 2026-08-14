@@ -197,7 +197,10 @@ jobs:
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" checkout -b "$branch"
           git add "${files[@]}"
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "chore(ci): pin build image digest ${NEW_DIGEST:7:12}"
-          git push -u origin "$branch" >/dev/null 2>&1 || { echo "::error::could not push $branch"; exit 1; }
+          if ! git push -u origin "$branch"; then
+            echo "::error::could not push $branch (see output above)"
+            exit 1
+          fi
           short="${NEW_DIGEST:0:19}"
           # shellcheck disable=SC2016 # backticks are intentional (markdown code spans in the PR body)
           printf -v body 'Pin các workflow tiêu thụ image sang digest bất biến của bản build vừa qua smoke-test.\n\n- Image: `ghcr.io/slimulv1/arisa-build:latest` → `ghcr.io/slimulv1/arisa-build@%s...` trong build-packages.yml, build-kernel.yml, publish.yml\n- Tag `:latest` chỉ được promote sau khi smoke-test đạt, nên digest pin luôn trỏ tới image đã kiểm chứng.\n\nPR này sẽ được auto-merge khi sẵn sàng.' "$short"
@@ -248,7 +251,10 @@ jobs:
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" checkout -b "$branch"
           git add docker/build-image/Dockerfile
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "chore(docker): bump base digest to ${NEW_BASE:7:12}"
-          git push -u origin "$branch" >/dev/null 2>&1 || { echo "::error::could not push $branch"; exit 1; }
+          if ! git push -u origin "$branch"; then
+            echo "::error::could not push $branch (see output above)"
+            exit 1
+          fi
           short="${NEW_BASE:0:19}"
           # shellcheck disable=SC2016 # backticks are intentional (markdown code spans in the PR body)
           printf -v body 'Cập nhật base image `cachyos/cachyos-v3` sang digest mới nhất upstream (%s...).\n\nMerge sẽ trigger workflow rebuild image trên base mới (paths: docker/build-image/Dockerfile) → bản build mới được smoke-test rồi mới pin digest vào các workflow tiêu thụ.\n\nPR này sẽ được auto-merge khi sẵn sàng.' "$short"
