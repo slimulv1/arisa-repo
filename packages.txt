@@ -22,6 +22,7 @@ visual-studio-code-bin
 localsend
 openrgb-git
 brave-origin-bin
+nixd
 
 # --- Self-maintained packages (local:) ---
 local: linux-arisa
