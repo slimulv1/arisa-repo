@@ -6,7 +6,7 @@
 </p>
 <p><br/></p>
 
-**A personal Arch Linux binary repo that just works.**
+**Every package, sealed with a charm.**
 
 100% tự động bằng GitHub Actions + GitHub Releases — zero-cost, không cần VPS. Viết một dòng trong `packages.txt`, còn lại Arisa lo: sync AUR → build → ký → publish → bạn `pacman -Syu` là có gói mới.
 
