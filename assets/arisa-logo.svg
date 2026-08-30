@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="star" cx="45%" cy="40%" r="62%">
+      <stop offset="0%" stop-color="#e9d5ff"/>
+      <stop offset="55%" stop-color="#d4b5f5"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </radialGradient>
+    <radialGradient id="cheek" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f9a8d4" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#f9a8d4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- No background (transparent). A cute magical star with tiny sparkles. -->
+
+  <!-- Sparkles -->
+  <g fill="#ffffff" opacity="0.8">
+    <circle cx="120" cy="120" r="4"/>
+    <circle cx="420" cy="104" r="3.5"/>
+    <circle cx="120" cy="384" r="3.5"/>
+    <circle cx="404" cy="386" r="4"/>
+    <circle cx="256" cy="70" r="3.5"/>
+    <circle cx="344" cy="140" r="3"/>
+  </g>
+
+  <!-- Star body (rounded 5-point star, centered) -->
+  <path d="
+    M 256 78
+    L 293 158
+    L 380 166
+    L 315 228
+    L 336 314
+    L 256 272
+    L 176 314
+    L 197 228
+    L 132 166
+    L 219 158
+    Z
+  " fill="url(#star)" stroke="#8b5cf6" stroke-width="6" stroke-linejoin="round"/>
+
+  <!-- Inner sparkle highlight on star -->
+  <circle cx="230" cy="160" r="10" fill="#ffffff" opacity="0.35"/>
+
+  <!-- Eyes -->
+  <ellipse cx="228" cy="232" rx="13" ry="17" fill="#2e1065"/>
+  <ellipse cx="284" cy="232" rx="13" ry="17" fill="#2e1065"/>
+  <!-- Eye shine -->
+  <circle cx="233" cy="226" r="4.5" fill="#ffffff" opacity="0.9"/>
+  <circle cx="289" cy="226" r="4.5" fill="#ffffff" opacity="0.9"/>
+
+  <!-- Blush -->
+  <ellipse cx="208" cy="266" rx="22" ry="12" fill="url(#cheek)"/>
+  <ellipse cx="304" cy="266" rx="22" ry="12" fill="url(#cheek)"/>
+
+  <!-- Smile -->
+  <path d="M 244 266 Q 256 288 268 266" stroke="#2e1065" stroke-width="6" fill="none" stroke-linecap="round"/>
+</svg>

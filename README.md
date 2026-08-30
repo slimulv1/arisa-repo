@@ -1,11 +1,19 @@
-# Arisa Repository
+# Arisa
 
-Kho binary Arch Linux cá nhân — build 100% tự động bằng GitHub Actions + GitHub Releases (zero-cost, không cần VPS).
+<p><br/></p>
+<p align="center">
+  <img src="assets/arisa-logo.png" alt="Arisa Logo" style="width: 192px" />
+</p>
+<p><br/></p>
+
+**A personal Arch Linux binary repo that just works.**
+
+100% tự động bằng GitHub Actions + GitHub Releases — zero-cost, không cần VPS. Viết một dòng trong `packages.txt`, còn lại Arisa lo: sync AUR → build → ký → publish → bạn `pacman -Syu` là có gói mới.
 
 <div align="center">
 
 [![Arch Linux](https://img.shields.io/badge/Arch_Linux-1793D1?style=for-the-badge&logo=archlinux&logoColor=white)](https://archlinux.org)
-[![pacman install](https://img.shields.io/badge/pacman-arisa-7b2ff7?style=for-the-badge&logo=archlinux&logoColor=white)](https://wiki.archlinux.org/title/Unofficial_user_repositories)
+[![pacman install](https://img.shields.io/badge/pacman-arisa-a78bfa?style=for-the-badge&logo=archlinux&logoColor=white)](https://wiki.archlinux.org/title/Unofficial_user_repositories)
 [![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
 [![Build packages](https://img.shields.io/github/actions/workflow/status/slimulv1/arisa-repo/build-packages.yml?branch=main&label=Build%20packages&style=flat-square)](https://github.com/slimulv1/arisa-repo/actions/workflows/build-packages.yml)
@@ -20,22 +28,9 @@ Kho binary Arch Linux cá nhân — build 100% tự động bằng GitHub Action
 
 </div>
 
-## Nội dung
-
-- [Cài đặt](#cài-đặt)
-- [Sử dụng hàng ngày](#sử-dụng-hàng-ngày)
-- [Xác minh chữ ký GPG](#xác-minh-chữ-ký-gpg)
-- [Nguyên lý hoạt động](#nguyên-lý-hoạt-động)
-- [Thêm package](#thêm-package)
-- [Kiến trúc CI/CD](#kiến-trúc-cicd)
-- [Bảo mật](#bảo-mật)
-- [Danh sách package](#danh-sách-package)
-- [Fork cho riêng mình](#fork-cho-riêng-mình)
-- [Nguồn gốc](#nguồn-gốc)
-
 ---
 
-## Cài đặt
+## Quick Start
 
 **Yêu cầu:** Arch / CachyOS / EndeavourOS, CPU hỗ trợ **x86-64-v3** (Intel Haswell trở lên, AMD Excavator trở lên). Kiểm tra:
 
@@ -51,7 +46,7 @@ SigLevel = Optional DatabaseOptional
 Server = https://github.com/slimulv1/arisa-repo/releases/download/repository
 ```
 
-Hoặc dùng lệnh:
+Hoặc:
 
 ```bash
 sudo tee -a /etc/pacman.conf <<'EOF'
@@ -221,3 +216,4 @@ Repo này được **fork từ** [my-arch-repo](https://github.com/nhktmdzhg/my-
 <p align="center">
 	<a href="https://github.com/slimulv1/arisa-repo/blob/main/LICENSE"><img src="https://img.shields.io/static/v1.svg?style=for-the-badge&label=License&message=MIT&logoColor=d9e0ee&colorA=363a4f&colorB=04aeec"/></a>
 </p>
+
