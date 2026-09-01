@@ -233,7 +233,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     container:
-      image: ghcr.io/slimulv1/arisa-build@sha256:e943a65ce0583a46ca79ff6e52f00a84fb12c6cb982fddb84ef42512fe8bcafc
+      image: ghcr.io/slimulv1/arisa-build@sha256:e37d9d1cd73675dceae03319ff986ef957fe6022cf6d4813dc21796a91fb7b85
     env:
       CCACHE_DIR: /tmp/ccache
     steps:
