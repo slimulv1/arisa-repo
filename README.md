@@ -1,10 +1,5 @@
 # Arisa
 
-<p><br/></p>
-<p align="center">
-  <img src="assets/arisa-logo.png" alt="Arisa Logo" style="width: 192px" />
-</p>
-<p><br/></p>
 
 **Every package, sealed with a charm.**
 
