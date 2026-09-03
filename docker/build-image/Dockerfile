@@ -10,7 +10,7 @@
 # upstream digest on a daily schedule and opens a bump PR when it changes.
 # Bump deliberately, e.g.:
 #   docker manifest inspect cachyos/cachyos-v3:latest
-FROM cachyos/cachyos-v3@sha256:3967780ceb26c060afff0786b4d1b37d4a0a5366adcd3f575f2e136a65bb3caa
+FROM cachyos/cachyos-v3@sha256:fd61989c685c5f06db986b80cc2684f5cf83e0fa0d0d2c7e6fbe415944016472
 
 # Build config baked into the image (previously downloaded from
 # raw.githubusercontent.com at job runtime). Sources: CachyOS/docker-makepkg
