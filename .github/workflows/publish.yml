@@ -79,6 +79,13 @@ jobs:
           # Source name of a makepkg artifact: pkgname-pkgver-pkgrel-arch.pkg.tar.zst
           strip_source() { echo "${1%-*-*-*.pkg.tar.zst}"; }
 
+          # Shared retry helper (defined in .github/scripts/retry.sh). The
+          # union downloads hit the GitHub API and can transiently fail with
+          # 5xx — on 2026-09-11 an HTTP 500 mid-union killed the entire
+          # publish (kernel was already built). Every other gh call in this
+          # workflow is retried; this one must be too.
+          source "$GITHUB_WORKSPACE/.github/scripts/retry.sh"
+
           # Batch = packages just built by the caller (root of output/)
           declare -A batch_bases=()
           shopt -s nullglob
@@ -101,7 +108,7 @@ jobs:
               continue
             fi
             echo "Union from release: $name"
-            gh release download "$TAG" --repo "$REPO" --pattern "$name" --dir union --clobber
+            retry 5 gh release download "$TAG" --repo "$REPO" --pattern "$name" --dir union --clobber
           done < /tmp/release-pkgs.txt
 
       - name: Prepare database and manifest (no renaming, idempotent)
@@ -449,3 +456,25 @@ jobs:
           *Automated notification — details in the run log above.*"
           gh issue create --repo "${{ github.repository }}" \
             --title "$TITLE" --body "$BODY" || true
+
+  close-stale-issue:
+    name: Close stale publish-failure issues
+    if: success()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Close open publish-failure issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          ISSUES="$(gh issue list --repo "$REPO" --state open \
+            --search '"Release publish failed" in:title author:app/github-actions' \
+            --json number -q '.[].number' 2>/dev/null || true)"
+          for num in $ISSUES; do
+            [[ "$num" =~ ^[0-9]+$ ]] || continue
+            gh issue close "$num" --repo "$REPO" \
+              --comment "✅ Resolved — a later publish succeeded (run ${{ github.run_id }})." \
+              || echo "::warning::Could not close issue #$num"
+          done

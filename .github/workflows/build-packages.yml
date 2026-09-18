@@ -133,3 +133,25 @@ jobs:
           *Automated notification — details in the run log above.*"
           gh issue create --repo "${{ github.repository }}" \
             --title "$TITLE" --body "$BODY" || true
+
+  close-stale-issue:
+    name: Close stale build-failure issues
+    if: success()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Close open build-failure issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          ISSUES="$(gh issue list --repo "$REPO" --state open \
+            --search '"Package build failed" in:title author:app/github-actions' \
+            --json number -q '.[].number' 2>/dev/null || true)"
+          for num in $ISSUES; do
+            [[ "$num" =~ ^[0-9]+$ ]] || continue
+            gh issue close "$num" --repo "$REPO" \
+              --comment "✅ Resolved — a later package build succeeded (run ${{ github.run_id }})." \
+              || echo "::warning::Could not close issue #$num"
+          done
