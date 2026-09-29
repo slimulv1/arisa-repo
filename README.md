@@ -41,17 +41,6 @@ SigLevel = Optional DatabaseOptional
 Server = https://github.com/slimulv1/arisa-repo/releases/download/repository
 ```
 
-Hoặc:
-
-```bash
-sudo tee -a /etc/pacman.conf <<'EOF'
-
-[arisa]
-SigLevel = Optional DatabaseOptional
-Server = https://github.com/slimulv1/arisa-repo/releases/download/repository
-EOF
-```
-
 **Bước 2 — Đồng bộ và cài:**
 
 ```bash
