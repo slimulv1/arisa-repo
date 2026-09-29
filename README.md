@@ -33,7 +33,7 @@
 grep -o 'x86-64-v[0-9]' /proc/cpuinfo | sort -u
 ```
 
-**Bước 1 — Thêm repository** vào cuối `/etc/pacman.conf`:
+**Bước 1 — Thêm repository** vào đầu `/etc/pacman.conf`:
 
 ```ini
 [arisa]
