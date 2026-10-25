@@ -37,7 +37,7 @@ jobs:
   publish:
     name: Publish Packages to Release
     runs-on: ubuntu-latest
-    container: ghcr.io/slimulv1/arisa-build@sha256:303370625469c0f7a0933d6e0f2031c758d2c1ff673582d2a6b78f16fc5baa14
+    container: ghcr.io/slimulv1/arisa-build@sha256:6afe457c6790601d72852f1038d14630c529a630725e63d13a399199c5e9178c
     timeout-minutes: 30
     environment: arisa-production
     steps:
