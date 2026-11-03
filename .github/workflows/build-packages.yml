@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 200
     container:
-      image: ghcr.io/slimulv1/arisa-build@sha256:456e7763c2008f75bd7bfd7a84ce44ff37e1ab6002f45b1c7289b5efd947dee1
+      image: ghcr.io/slimulv1/arisa-build@sha256:6321e50827c0dc9bb318c6713313419c296aa57a0e038cc9eab01377ebb8caca
     strategy:
       fail-fast: false
       matrix:
